@@ -2,6 +2,7 @@ package workflows
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,7 +22,11 @@ func TestWordflowCampaignExposesTheCommonCampaignQueries(t *testing.T) {
 	suite := testsuite.WorkflowTestSuite{}
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterActivityWithOptions(testRegisterCampaignActivity, activity.RegisterOptions{Name: ActivityRegisterCampaign})
-	env.OnActivity(ActivityRegisterCampaign, mock.Anything, mock.Anything).Return(nil).Once()
+	var registrationUpdateID string
+	env.OnActivity(ActivityRegisterCampaign, mock.Anything, mock.Anything).
+		Run(func(arguments mock.Arguments) {
+			registrationUpdateID = arguments.Get(1).(RegisterCampaignActivityInput).UpdateID
+		}).Return(nil).Once()
 
 	joinedAt := env.Now()
 	levels := []game.Puzzle{{Level: 1, Title: "One"}, {Level: 2, Title: "Two"}}
@@ -60,6 +65,7 @@ func TestWordflowCampaignExposesTheCommonCampaignQueries(t *testing.T) {
 	require.Equal(t, campaign.LevelLocked, view.Levels[1].Status)
 	require.True(t, resolution.Allowed)
 	require.Equal(t, levels[0], resolution.Puzzle)
+	require.True(t, strings.HasPrefix(registrationUpdateID, "register/test/"))
 	env.AssertExpectations(t)
 }
 

@@ -81,7 +81,7 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 		}
 		if err := workflow.ExecuteActivity(activityCtx, ActivityRegisterCampaign, RegisterCampaignActivityInput{
 			Registration: registration,
-			UpdateID:     "register/" + state.Definition.ID,
+			UpdateID:     fmt.Sprintf("register/%s/%s", state.Definition.ID, workflow.GetInfo(ctx).WorkflowExecution.RunID),
 		}).Get(ctx, nil); err != nil {
 			return fmt.Errorf("register campaign: %w", err)
 		}
