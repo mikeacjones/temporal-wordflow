@@ -7,6 +7,7 @@ import (
 	"github.com/mjones/temporal-word-game/internal/campaign"
 	"github.com/mjones/temporal-word-game/internal/game"
 
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -51,6 +52,9 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 	if state == nil {
 		state = &WordflowCampaignState{Definition: input.Definition, Levels: input.Levels}
 	}
+	if err := validateWordflowCampaignLevels(state.Levels); err != nil {
+		return err
+	}
 
 	if err := workflow.SetQueryHandler(ctx, QueryCampaignSummary, func() (campaign.Summary, error) {
 		return wordflowCampaignSummary(ctx, state), nil
@@ -93,6 +97,19 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 		}
 	}
 	return workflow.Await(ctx, func() bool { return false })
+}
+
+func validateWordflowCampaignLevels(levels []game.Puzzle) error {
+	for _, puzzle := range levels {
+		if len([]rune(puzzle.Letters)) > game.MaxWordflowLetters {
+			return temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("level %d has more than %d letters", puzzle.Level, game.MaxWordflowLetters),
+				"invalid_campaign",
+				nil,
+			)
+		}
+	}
+	return nil
 }
 
 func wordflowCampaignSummary(ctx workflow.Context, state *WordflowCampaignState) campaign.Summary {

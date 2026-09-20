@@ -61,16 +61,7 @@ const (
 	wordHintPointCost   = 30
 )
 
-type speedBonusRule struct {
-	maximumDuration time.Duration
-	points          int
-}
-
-var speedBonusRules = []speedBonusRule{
-	{maximumDuration: time.Minute, points: 10},
-	{maximumDuration: 2 * time.Minute, points: 7},
-	{maximumDuration: 3 * time.Minute, points: 4},
-}
+var speedBonusPoints = []int{10, 7, 4}
 
 func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInput) (campaign.LevelResult, error) {
 	state := initialWordflowLevelState(ctx, input)
@@ -311,7 +302,7 @@ func wordflowLevelView(state *WordflowLevelState) game.GameView {
 		Level: state.Puzzle.Level, Title: state.Puzzle.Title, Letters: state.Letters,
 		Cells: cellViews, Words: words, FoundWords: len(state.FoundAnswers), TotalWords: len(state.Puzzle.Words),
 		Attempts: state.Attempts, RejectedWords: append([]string(nil), state.RejectedWords...),
-		SpeedBonuses: speedBonusTiers(state.StartedAt),
+		SpeedBonuses: speedBonusTiers(state.StartedAt, len(state.Puzzle.Words)),
 		HintBonus:    hintBonusFor(state), AccuracyBonus: accuracyBonusFor(state.IncorrectGuesses), Hints: state.Hints,
 		HintPrices: game.HintPrices{Letter: letterHintPointCost, Brush: brushHintPointCost, Word: wordHintPointCost},
 		Complete:   state.Complete, SpecialEvent: state.Puzzle.SpecialEvent,
@@ -497,7 +488,7 @@ func calculateGameScore(state *WordflowLevelState) game.GameScore {
 		duration = 0
 	}
 
-	speedBonus := speedBonusFor(duration)
+	speedBonus := speedBonusFor(duration, len(state.Puzzle.Words))
 	accuracyBonus := accuracyBonusFor(state.IncorrectGuesses)
 	hintBonus := hintBonusFor(state)
 	basePoints := 10
@@ -523,24 +514,30 @@ func hintBonusFor(state *WordflowLevelState) int {
 	return max(0, 10-penalty)
 }
 
-func speedBonusFor(duration time.Duration) int {
-	for _, rule := range speedBonusRules {
-		if duration <= rule.maximumDuration {
-			return rule.points
+func speedBonusFor(duration time.Duration, wordCount int) int {
+	tierDuration := speedBonusTierDuration(wordCount)
+	for index, points := range speedBonusPoints {
+		if duration <= time.Duration(index+1)*tierDuration {
+			return points
 		}
 	}
 	return 0
 }
 
-func speedBonusTiers(startedAt time.Time) []game.SpeedBonusTier {
-	tiers := make([]game.SpeedBonusTier, 0, len(speedBonusRules))
-	for _, rule := range speedBonusRules {
+func speedBonusTiers(startedAt time.Time, wordCount int) []game.SpeedBonusTier {
+	tierDuration := speedBonusTierDuration(wordCount)
+	tiers := make([]game.SpeedBonusTier, 0, len(speedBonusPoints))
+	for index, points := range speedBonusPoints {
 		tiers = append(tiers, game.SpeedBonusTier{
-			Points: rule.points,
-			EndsAt: startedAt.Add(rule.maximumDuration),
+			Points: points,
+			EndsAt: startedAt.Add(time.Duration(index+1) * tierDuration),
 		})
 	}
 	return tiers
+}
+
+func speedBonusTierDuration(wordCount int) time.Duration {
+	return time.Duration(max(4, wordCount)) * 15 * time.Second
 }
 
 func puzzleHasAnswer(puzzle game.Puzzle, answer string) bool {

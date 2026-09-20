@@ -29,7 +29,7 @@ func main() {
 	if temporalNamespace == "" {
 		temporalNamespace = "default"
 	}
-	if err := bootstrap.StartDefaultCampaign(context.Background(), temporalClient, taskQueue); err != nil {
+	if _, err := bootstrap.StartDefaultCampaign(context.Background(), temporalClient, taskQueue); err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("web app listening on %s", address)

@@ -118,12 +118,15 @@ func TestSpeedBonusTiersUseTheWorkflowStartTime(t *testing.T) {
 		{Points: 10, EndsAt: startedAt.Add(time.Minute)},
 		{Points: 7, EndsAt: startedAt.Add(2 * time.Minute)},
 		{Points: 4, EndsAt: startedAt.Add(3 * time.Minute)},
-	}, speedBonusTiers(startedAt))
+	}, speedBonusTiers(startedAt, 4))
 
-	require.Equal(t, 10, speedBonusFor(time.Minute))
-	require.Equal(t, 7, speedBonusFor(time.Minute+time.Nanosecond))
-	require.Equal(t, 4, speedBonusFor(2*time.Minute+time.Nanosecond))
-	require.Zero(t, speedBonusFor(3*time.Minute+time.Nanosecond))
+	require.Equal(t, 10, speedBonusFor(time.Minute, 4))
+	require.Equal(t, 7, speedBonusFor(time.Minute+time.Nanosecond, 4))
+	require.Equal(t, 4, speedBonusFor(2*time.Minute+time.Nanosecond, 4))
+	require.Zero(t, speedBonusFor(3*time.Minute+time.Nanosecond, 4))
+	require.Equal(t, 90*time.Second, speedBonusTierDuration(6))
+	require.Equal(t, 2*time.Minute, speedBonusTierDuration(8))
+	require.Equal(t, 150*time.Second, speedBonusTierDuration(10))
 }
 
 func TestLevelViewShowsCurrentHintAndAccuracyBonuses(t *testing.T) {

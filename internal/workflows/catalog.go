@@ -8,7 +8,8 @@ import (
 )
 
 type CatalogWorkflowInput struct {
-	State *CatalogState `json:"state,omitempty"`
+	InitialCampaigns []campaign.Registration `json:"initialCampaigns,omitempty"`
+	State            *CatalogState           `json:"state,omitempty"`
 }
 
 type CatalogState struct {
@@ -22,15 +23,36 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 	state := input.State
 	if state == nil {
 		state = &CatalogState{ContinueAfterEvents: defaultContinueAfterEvents}
+		for _, registration := range input.InitialCampaigns {
+			if err := validateCampaignRegistration(state, registration); err != nil {
+				return err
+			}
+			addCampaign(state, registration)
+		}
 	}
 	if state.ContinueAfterEvents == 0 {
 		state.ContinueAfterEvents = defaultContinueAfterEvents
 	}
 	changed := workflow.NewBufferedChannel(ctx, 1)
 
-	if err := workflow.SetQueryHandler(ctx, QueryCatalog, func() (campaign.CatalogView, error) {
-		return catalogView(state), nil
-	}); err != nil {
+	if err := workflow.SetUpdateHandlerWithOptions(ctx, UpdateOpenCatalog,
+		func(_ workflow.Context, required []campaign.Registration) (campaign.CatalogView, error) {
+			for _, registration := range required {
+				addCampaign(state, registration)
+			}
+			state.EventsSinceContinue++
+			changed.SendAsync(true)
+			return catalogView(state), nil
+		}, workflow.UpdateHandlerOptions{
+			Validator: func(_ workflow.Context, required []campaign.Registration) error {
+				for _, registration := range required {
+					if err := validateCampaignRegistration(state, registration); err != nil {
+						return err
+					}
+				}
+				return nil
+			},
+		}); err != nil {
 		return err
 	}
 
@@ -39,10 +61,7 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 			if existing := findCampaignRegistration(state, registration.CampaignID); existing != nil {
 				return catalogView(state), nil
 			}
-			if findGame(state, registration.Game.ID) == nil {
-				state.Games = append(state.Games, registration.Game)
-			}
-			state.Campaigns = append(state.Campaigns, registration)
+			addCampaign(state, registration)
 			state.EventsSinceContinue++
 			changed.SendAsync(true)
 			return catalogView(state), nil
@@ -68,6 +87,16 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 		state.EventsSinceContinue = 0
 		return continueCatalogAsNew(ctx, state)
 	}
+}
+
+func addCampaign(state *CatalogState, registration campaign.Registration) {
+	if findCampaignRegistration(state, registration.CampaignID) != nil {
+		return
+	}
+	if findGame(state, registration.Game.ID) == nil {
+		state.Games = append(state.Games, registration.Game)
+	}
+	state.Campaigns = append(state.Campaigns, registration)
 }
 
 func validateCampaignRegistration(state *CatalogState, registration campaign.Registration) error {

@@ -16,6 +16,9 @@ type LevelDefinition struct {
 }
 
 func BuildPuzzle(level int, definition LevelDefinition) (Puzzle, error) {
+	if len([]rune(definition.Letters)) > MaxWordflowLetters {
+		return Puzzle{}, fmt.Errorf("level %d has more than %d letters", level, MaxWordflowLetters)
+	}
 	words := append([]string(nil), definition.Words...)
 	sort.SliceStable(words, func(i, j int) bool {
 		return len(words[i]) > len(words[j])

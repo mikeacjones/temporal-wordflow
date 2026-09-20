@@ -16,6 +16,8 @@ const (
 
 type Direction string
 
+const MaxWordflowLetters = 8
+
 const (
 	Across Direction = "across"
 	Down   Direction = "down"

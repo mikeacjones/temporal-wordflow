@@ -36,10 +36,10 @@ type campaignUnlockFile struct {
 	IntervalHours     int `json:"intervalHours"`
 }
 
-func StartDefaultCampaign(ctx context.Context, temporalClient client.Client, taskQueue string) error {
+func StartDefaultCampaign(ctx context.Context, temporalClient client.Client, taskQueue string) (campaign.Registration, error) {
 	input, err := DefaultWordflowCampaign()
 	if err != nil {
-		return err
+		return campaign.Registration{}, err
 	}
 	_, err = temporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                       workflows.WordflowCampaignWorkflowID(input.Definition.ID),
@@ -47,7 +47,14 @@ func StartDefaultCampaign(ctx context.Context, temporalClient client.Client, tas
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}, workflows.WordflowCampaignWorkflowName, input)
-	return err
+	if err != nil {
+		return campaign.Registration{}, err
+	}
+	return campaign.Registration{
+		CampaignID: input.Definition.ID,
+		WorkflowID: workflows.WordflowCampaignWorkflowID(input.Definition.ID),
+		Game:       input.Definition.Game,
+	}, nil
 }
 
 func DefaultWordflowCampaign() (workflows.WordflowCampaignWorkflowInput, error) {

@@ -27,7 +27,7 @@ func main() {
 	}
 
 	taskQueue := env("TEMPORAL_TASK_QUEUE", workflows.TaskQueue)
-	if err := bootstrap.StartDefaultCampaign(ctx, temporalClient, taskQueue); err != nil {
+	if _, err := bootstrap.StartDefaultCampaign(ctx, temporalClient, taskQueue); err != nil {
 		log.Fatal(err)
 	}
 	temporalNamespace := env("TEMPORAL_WEB_UI_NAMESPACE", clientOptions.Namespace)

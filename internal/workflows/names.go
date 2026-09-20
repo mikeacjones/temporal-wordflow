@@ -16,7 +16,6 @@ const (
 	WordflowLevelWorkflowName    = "WordflowLevelWorkflow"
 	LeaderboardWorkflowName      = "LeaderboardWorkflow"
 
-	QueryCatalog            = "catalog"
 	QueryCampaignSummary    = "campaign-summary"
 	QueryCampaignView       = "campaign-view"
 	QueryWordflowLevel      = "wordflow-level"
@@ -25,6 +24,7 @@ const (
 	QueryWordflowLevelState = "wordflow-level-state"
 	QueryLeaderboard        = "leaderboard"
 
+	UpdateOpenCatalog      = "open-catalog"
 	UpdateRegisterCampaign = "register-campaign"
 	UpdateRevokeSession    = "revoke-session"
 	UpdateOpenSession      = "open-session"

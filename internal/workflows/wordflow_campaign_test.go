@@ -94,3 +94,8 @@ func TestCampaignStatusUsesConfiguredWindow(t *testing.T) {
 	require.Equal(t, campaign.StatusActive, wordflowCampaignStatus(definition, startsAt))
 	require.Equal(t, campaign.StatusEnded, wordflowCampaignStatus(definition, endsAt))
 }
+
+func TestCampaignRejectsMoreThanEightLetters(t *testing.T) {
+	err := validateWordflowCampaignLevels([]game.Puzzle{{Level: 1, Letters: "ABCDEFGHI"}})
+	require.ErrorContains(t, err, "more than 8 letters")
+}

@@ -5,6 +5,13 @@ import (
 	"testing"
 )
 
+func TestBuildPuzzleRejectsMoreThanEightLetters(t *testing.T) {
+	_, err := BuildPuzzle(1, LevelDefinition{Letters: "ABCDEFGHI", Words: []string{"BAD"}})
+	if err == nil || !strings.Contains(err.Error(), "more than 8 letters") {
+		t.Fatalf("expected the letter limit error, got %v", err)
+	}
+}
+
 func TestPlacementRejectsParallelOverlap(t *testing.T) {
 	grid := map[gridPoint]gridCell{}
 	writeWord(grid, PlacedWord{Answer: "SESAME", Direction: Down})

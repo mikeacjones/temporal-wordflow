@@ -20,88 +20,78 @@
   "levels": [
     {
       "level": 1,
-      "title": "Palm Welcome",
-      "letters": "PALMS",
+      "title": "Palm Arrival",
+      "letters": "ALMP",
       "words": [
-        {"answer":"PALMS","row":3,"col":2,"direction":"across"},
-        {"answer":"PALM","row":3,"col":2,"direction":"down"},
-        {"answer":"SLAM","row":2,"col":4,"direction":"down"},
-        {"answer":"MAPS","row":0,"col":6,"direction":"down"},
-        {"answer":"LAPS","row":1,"col":5,"direction":"across"},
-        {"answer":"SPA","row":4,"col":0,"direction":"across"}
+        {"answer":"PALM","row":3,"col":0,"direction":"across"},
+        {"answer":"LAMP","row":0,"col":0,"direction":"down"},
+        {"answer":"MAP","row":3,"col":3,"direction":"down"},
+        {"answer":"LAP","row":0,"col":0,"direction":"across"}
       ]
     },
     {
       "level": 2,
-      "title": "Desert Morning",
-      "letters": "DESERT",
+      "title": "Desert Dunes",
+      "letters": "DENU",
       "words": [
-        {"answer":"DESERT","row":2,"col":2,"direction":"across"},
-        {"answer":"RESET","row":1,"col":3,"direction":"down"},
-        {"answer":"STEER","row":0,"col":5,"direction":"down"},
-        {"answer":"TREES","row":2,"col":7,"direction":"down"},
-        {"answer":"REST","row":5,"col":0,"direction":"across"},
-        {"answer":"TREE","row":4,"col":0,"direction":"down"},
-        {"answer":"RED","row":3,"col":7,"direction":"across"},
-        {"answer":"SEE","row":0,"col":5,"direction":"across"}
+        {"answer":"DUNE","row":2,"col":0,"direction":"across"},
+        {"answer":"DUE","row":2,"col":0,"direction":"down"},
+        {"answer":"DEN","row":0,"col":2,"direction":"down"},
+        {"answer":"END","row":2,"col":3,"direction":"down"}
       ]
     },
     {
       "level": 3,
-      "title": "Poolside Reset",
-      "letters": "POOLSIDE",
+      "title": "Solar Morning",
+      "letters": "ALORS",
       "words": [
-        {"answer":"POOLSIDE","row":3,"col":2,"direction":"across"},
-        {"answer":"POOLS","row":3,"col":2,"direction":"down"},
-        {"answer":"SLOPE","row":1,"col":4,"direction":"down"},
-        {"answer":"SLIDE","row":3,"col":6,"direction":"down"},
-        {"answer":"PILES","row":0,"col":9,"direction":"down"},
-        {"answer":"LOOP","row":0,"col":6,"direction":"across"},
-        {"answer":"SOLD","row":6,"col":0,"direction":"across"},
-        {"answer":"SIDE","row":4,"col":9,"direction":"across"},
-        {"answer":"DIP","row":6,"col":6,"direction":"across"}
+        {"answer":"SOLAR","row":2,"col":0,"direction":"across"},
+        {"answer":"ORAL","row":2,"col":1,"direction":"down"},
+        {"answer":"SOAR","row":0,"col":3,"direction":"down"},
+        {"answer":"ALSO","row":5,"col":0,"direction":"across"},
+        {"answer":"OAR","row":5,"col":3,"direction":"down"},
+        {"answer":"SOL","row":0,"col":3,"direction":"across"}
       ]
     },
     {
       "level": 4,
-      "title": "Canyon Walk",
-      "letters": "CANYON",
+      "title": "Canyon Trail",
+      "letters": "AILRT",
       "words": [
-        {"answer":"CANYON","row":4,"col":0,"direction":"across"},
-        {"answer":"ANNOY","row":4,"col":1,"direction":"down"},
-        {"answer":"CANON","row":0,"col":2,"direction":"down"},
-        {"answer":"CYAN","row":1,"col":5,"direction":"down"},
-        {"answer":"ANY","row":6,"col":0,"direction":"across"},
-        {"answer":"CAN","row":0,"col":2,"direction":"across"}
+        {"answer":"TRAIL","row":3,"col":3,"direction":"across"},
+        {"answer":"TRIAL","row":3,"col":3,"direction":"down"},
+        {"answer":"TAIL","row":2,"col":5,"direction":"down"},
+        {"answer":"RAIL","row":0,"col":7,"direction":"down"},
+        {"answer":"LIAR","row":4,"col":0,"direction":"across"},
+        {"answer":"AIR","row":0,"col":5,"direction":"across"}
       ]
     },
     {
       "level": 5,
-      "title": "Desert Bloom",
-      "letters": "BLOOMS",
+      "title": "Desert Petals",
+      "letters": "AELPT",
       "words": [
-        {"answer":"BLOOMS","row":3,"col":3,"direction":"across"},
-        {"answer":"BLOOM","row":3,"col":3,"direction":"down"},
-        {"answer":"BOOMS","row":2,"col":5,"direction":"down"},
-        {"answer":"LOOMS","row":0,"col":7,"direction":"down"},
-        {"answer":"BOOM","row":5,"col":2,"direction":"across"},
-        {"answer":"LOOM","row":7,"col":0,"direction":"across"},
-        {"answer":"SOLO","row":6,"col":5,"direction":"across"},
-        {"answer":"MOBS","row":1,"col":6,"direction":"across"}
+        {"answer":"PETAL","row":4,"col":1,"direction":"across"},
+        {"answer":"PLATE","row":4,"col":1,"direction":"down"},
+        {"answer":"LEAPT","row":0,"col":3,"direction":"down"},
+        {"answer":"PALE","row":2,"col":5,"direction":"down"},
+        {"answer":"TALE","row":6,"col":0,"direction":"across"},
+        {"answer":"TEAL","row":8,"col":0,"direction":"across"}
       ]
     },
     {
       "level": 6,
       "title": "Palm Springs",
-      "letters": "SPRINGS",
+      "letters": "GINPRS",
       "words": [
-        {"answer":"SPRINGS","row":2,"col":3,"direction":"across"},
-        {"answer":"SPRING","row":2,"col":3,"direction":"down"},
-        {"answer":"GRINS","row":1,"col":5,"direction":"down"},
-        {"answer":"RINGS","row":0,"col":7,"direction":"down"},
-        {"answer":"SING","row":2,"col":9,"direction":"down"},
-        {"answer":"PINS","row":5,"col":2,"direction":"across"},
-        {"answer":"GRIP","row":3,"col":0,"direction":"across"}
+        {"answer":"SPRING","row":4,"col":3,"direction":"across"},
+        {"answer":"GRIN","row":3,"col":5,"direction":"down"},
+        {"answer":"RING","row":2,"col":7,"direction":"down"},
+        {"answer":"SING","row":4,"col":3,"direction":"down"},
+        {"answer":"GRIP","row":2,"col":6,"direction":"across"},
+        {"answer":"PING","row":7,"col":0,"direction":"across"},
+        {"answer":"SPIN","row":6,"col":0,"direction":"down"},
+        {"answer":"RIG","row":0,"col":6,"direction":"down"}
       ],
       "completionBonus": 50,
       "completionBonusName": "Offsite midpoint"
@@ -109,86 +99,99 @@
     {
       "level": 7,
       "title": "Sunset Social",
-      "letters": "SUNSET",
+      "letters": "ENSSTU",
       "words": [
-        {"answer":"SUNSET","row":6,"col":2,"direction":"across"},
-        {"answer":"TUNES","row":2,"col":2,"direction":"down"},
-        {"answer":"NEST","row":6,"col":4,"direction":"down"},
-        {"answer":"SENT","row":5,"col":6,"direction":"down"},
-        {"answer":"NUTS","row":2,"col":0,"direction":"across"},
-        {"answer":"SUN","row":0,"col":0,"direction":"down"},
-        {"answer":"USE","row":5,"col":0,"direction":"across"}
+        {"answer":"SUNSET","row":2,"col":2,"direction":"across"},
+        {"answer":"NEST","row":0,"col":2,"direction":"down"},
+        {"answer":"TUNE","row":0,"col":4,"direction":"down"},
+        {"answer":"SENT","row":1,"col":6,"direction":"down"},
+        {"answer":"NUT","row":0,"col":2,"direction":"across"},
+        {"answer":"SET","row":3,"col":0,"direction":"across"},
+        {"answer":"SUN","row":3,"col":0,"direction":"down"},
+        {"answer":"TEN","row":4,"col":6,"direction":"across"}
       ]
     },
     {
       "level": 8,
-      "title": "Mountain Tram",
-      "letters": "TRAMWAY",
+      "title": "Mountain Ascent",
+      "letters": "ACENST",
       "words": [
-        {"answer":"TRAMWAY","row":5,"col":0,"direction":"across"},
-        {"answer":"TRAM","row":5,"col":0,"direction":"down"},
-        {"answer":"WARM","row":4,"col":2,"direction":"down"},
-        {"answer":"WART","row":5,"col":4,"direction":"down"},
-        {"answer":"MART","row":7,"col":2,"direction":"across"},
-        {"answer":"AWAY","row":2,"col":6,"direction":"down"},
-        {"answer":"WAY","row":2,"col":5,"direction":"across"},
-        {"answer":"RAY","row":0,"col":7,"direction":"down"}
+        {"answer":"ASCENT","row":3,"col":2,"direction":"across"},
+        {"answer":"SCENT","row":3,"col":3,"direction":"down"},
+        {"answer":"CANE","row":0,"col":5,"direction":"down"},
+        {"answer":"ACNE","row":5,"col":0,"direction":"across"},
+        {"answer":"CENT","row":0,"col":7,"direction":"down"},
+        {"answer":"EAST","row":7,"col":0,"direction":"across"},
+        {"answer":"SEAT","row":7,"col":2,"direction":"down"},
+        {"answer":"ANT","row":9,"col":2,"direction":"across"}
       ]
     },
     {
       "level": 9,
-      "title": "Resort Recharge",
-      "letters": "RESORT",
+      "title": "Resort Reset",
+      "letters": "ADEELRX",
       "words": [
-        {"answer":"RESORT","row":3,"col":3,"direction":"across"},
-        {"answer":"STORE","row":0,"col":3,"direction":"down"},
-        {"answer":"SORT","row":3,"col":5,"direction":"down"},
-        {"answer":"REST","row":3,"col":7,"direction":"down"},
-        {"answer":"ROSE","row":0,"col":1,"direction":"across"},
-        {"answer":"TORE","row":4,"col":0,"direction":"across"},
-        {"answer":"ROT","row":1,"col":8,"direction":"down"}
+        {"answer":"RELAXED","row":5,"col":3,"direction":"across"},
+        {"answer":"DEALER","row":0,"col":3,"direction":"down"},
+        {"answer":"LEADER","row":5,"col":5,"direction":"down"},
+        {"answer":"RELAX","row":1,"col":7,"direction":"down"},
+        {"answer":"ELDER","row":5,"col":8,"direction":"down"},
+        {"answer":"DEAL","row":0,"col":3,"direction":"across"},
+        {"answer":"REAL","row":2,"col":1,"direction":"across"},
+        {"answer":"READ","row":2,"col":9,"direction":"down"},
+        {"answer":"DARE","row":4,"col":0,"direction":"across"},
+        {"answer":"AXE","row":9,"col":3,"direction":"across"}
       ]
     },
     {
       "level": 10,
-      "title": "Offsite Ideas",
-      "letters": "IDEAS",
+      "title": "Idea Workshop",
+      "letters": "ACDEERT",
       "words": [
-        {"answer":"IDEAS","row":3,"col":3,"direction":"across"},
-        {"answer":"ASIDE","row":1,"col":3,"direction":"down"},
-        {"answer":"AIDES","row":0,"col":5,"direction":"down"},
-        {"answer":"SIDE","row":3,"col":7,"direction":"down"},
-        {"answer":"SAID","row":4,"col":0,"direction":"across"},
-        {"answer":"DIES","row":2,"col":0,"direction":"across"},
-        {"answer":"AID","row":0,"col":5,"direction":"across"}
+        {"answer":"CREATED","row":4,"col":4,"direction":"across"},
+        {"answer":"REACTED","row":1,"col":4,"direction":"down"},
+        {"answer":"CREATE","row":2,"col":6,"direction":"down"},
+        {"answer":"TRACE","row":4,"col":8,"direction":"down"},
+        {"answer":"CRATE","row":0,"col":9,"direction":"down"},
+        {"answer":"CATER","row":1,"col":0,"direction":"across"},
+        {"answer":"TRADE","row":6,"col":0,"direction":"across"},
+        {"answer":"DATE","row":4,"col":10,"direction":"down"},
+        {"answer":"READ","row":1,"col":9,"direction":"across"},
+        {"answer":"CARE","row":1,"col":0,"direction":"down"}
       ]
     },
     {
       "level": 11,
-      "title": "Team Sync",
-      "letters": "SYNCED",
+      "title": "Offsite Ideas",
+      "letters": "EFFIOST",
       "words": [
-        {"answer":"SYNCED","row":4,"col":0,"direction":"across"},
-        {"answer":"DYES","row":1,"col":0,"direction":"down"},
-        {"answer":"SEND","row":2,"col":2,"direction":"down"},
-        {"answer":"DENS","row":4,"col":5,"direction":"down"},
-        {"answer":"SYNC","row":2,"col":2,"direction":"across"},
-        {"answer":"YES","row":7,"col":3,"direction":"across"},
-        {"answer":"DEN","row":0,"col":4,"direction":"down"}
+        {"answer":"OFFSITE","row":2,"col":5,"direction":"across"},
+        {"answer":"OFFSET","row":2,"col":5,"direction":"down"},
+        {"answer":"FIST","row":2,"col":7,"direction":"down"},
+        {"answer":"SITE","row":1,"col":9,"direction":"down"},
+        {"answer":"SOFT","row":7,"col":2,"direction":"across"},
+        {"answer":"TIES","row":0,"col":11,"direction":"down"},
+        {"answer":"FOE","row":7,"col":4,"direction":"down"},
+        {"answer":"TOE","row":0,"col":11,"direction":"across"},
+        {"answer":"SET","row":7,"col":2,"direction":"down"},
+        {"answer":"FIT","row":9,"col":0,"direction":"across"}
       ]
     },
     {
       "level": 12,
-      "title": "Durable Memories",
-      "letters": "MEMORY",
+      "title": "Team Together",
+      "letters": "EEGHORTT",
       "words": [
-        {"answer":"MEMORY","row":3,"col":2,"direction":"across"},
-        {"answer":"MEMO","row":3,"col":2,"direction":"down"},
-        {"answer":"MORE","row":0,"col":3,"direction":"down"},
-        {"answer":"ROME","row":2,"col":5,"direction":"down"},
-        {"answer":"YORE","row":3,"col":7,"direction":"down"},
-        {"answer":"MOM","row":5,"col":0,"direction":"across"},
-        {"answer":"ORE","row":6,"col":2,"direction":"across"}
+        {"answer":"TOGETHER","row":3,"col":3,"direction":"across"},
+        {"answer":"OTHER","row":2,"col":3,"direction":"down"},
+        {"answer":"THREE","row":0,"col":6,"direction":"down"},
+        {"answer":"THERE","row":2,"col":8,"direction":"down"},
+        {"answer":"GREET","row":2,"col":10,"direction":"down"},
+        {"answer":"HERO","row":2,"col":0,"direction":"across"},
+        {"answer":"TREE","row":5,"col":1,"direction":"across"},
+        {"answer":"HERE","row":6,"col":5,"direction":"across"},
+        {"answer":"THE","row":0,"col":6,"direction":"across"},
+        {"answer":"GET","row":2,"col":10,"direction":"across"}
       ],
       "completionBonus": 100,
       "completionBonusName": "Offsite finale"

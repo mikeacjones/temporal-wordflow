@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mjones/temporal-word-game/internal/bootstrap"
 	"github.com/mjones/temporal-word-game/internal/campaign"
 	"github.com/mjones/temporal-word-game/internal/game"
 	"github.com/mjones/temporal-word-game/internal/workflows"
@@ -266,13 +267,33 @@ func (s *Server) getCatalog(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	result, err := s.temporal.QueryWorkflow(request.Context(), workflows.CatalogWorkflowID, "", workflows.QueryCatalog)
+	defaultCampaign, err := bootstrap.StartDefaultCampaign(request.Context(), s.temporal, s.taskQueue)
+	if err != nil {
+		writeTemporalError(writer, err)
+		return
+	}
+	start := s.temporal.NewWithStartWorkflowOperation(client.StartWorkflowOptions{
+		ID:                       workflows.CatalogWorkflowID,
+		TaskQueue:                s.taskQueue,
+		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
+	}, workflows.CatalogWorkflowName, workflows.CatalogWorkflowInput{
+		InitialCampaigns: []campaign.Registration{defaultCampaign},
+	})
+	handle, err := s.temporal.UpdateWithStartWorkflow(request.Context(), client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: start,
+		UpdateOptions: client.UpdateWorkflowOptions{
+			UpdateID: newID(), UpdateName: workflows.UpdateOpenCatalog,
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+			Args:         []any{[]campaign.Registration{defaultCampaign}},
+		},
+	})
 	if err != nil {
 		writeTemporalError(writer, err)
 		return
 	}
 	var catalogView campaign.CatalogView
-	if err := result.Get(&catalogView); err != nil {
+	if err := handle.Get(request.Context(), &catalogView); err != nil {
 		writeTemporalError(writer, err)
 		return
 	}
