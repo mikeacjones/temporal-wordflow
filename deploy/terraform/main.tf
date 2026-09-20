@@ -13,7 +13,7 @@ data "aws_route53_zone" "public" {
 
 locals {
   repo_root            = abspath("${path.module}/../..")
-  dist_dir             = "${path.module}/dist"
+  dist_dir             = abspath("${path.module}/dist")
   worker_function_name = "${var.project_name}-worker"
   api_function_name    = "${var.project_name}-api"
   worker_build_id      = data.external.git.result.sha
@@ -28,7 +28,7 @@ locals {
   source_files = sort(concat(
     tolist(fileset(local.repo_root, "cmd/**")),
     tolist(fileset(local.repo_root, "internal/**")),
-    ["go.mod", "go.sum"],
+    ["go.mod", "go.sum", "deploy/terraform/scripts/build.sh"],
   ))
   source_hash = base64sha256(join("", [
     for file in local.source_files : "${file}:${filesha256("${local.repo_root}/${file}")}"
