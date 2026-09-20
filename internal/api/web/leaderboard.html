@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Temporal Wordflow Leaderboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="leaderboard-page">
+  <main class="leaderboard-shell">
+    <header>
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true">✦</div>
+        <div>
+          <p class="eyebrow">Live durable rankings</p>
+          <h1>Wordflow Leaderboard</h1>
+          <p class="tagline">Lifetime points earned · refreshed automatically</p>
+        </div>
+      </div>
+      <a class="quiet workflow-link" href="/">Play Wordflow ↗</a>
+    </header>
+
+    <div class="status-rail"><span></span> Temporal durable state · live</div>
+    <section class="leaderboard-card" aria-live="polite">
+      <div class="leaderboard-heading">
+        <span>Rank</span><span>Player</span><span>Levels</span><span>Points</span>
+      </div>
+      <ol id="leaderboard-entries" class="leaderboard-entries"></ol>
+      <p id="leaderboard-empty" class="leaderboard-empty">Complete a wordflow to record the first score.</p>
+    </section>
+    <p id="leaderboard-status" class="leaderboard-status">Connecting to the leaderboard workflow…</p>
+  </main>
+  <script src="/leaderboard.js" defer></script>
+</body>
+</html>

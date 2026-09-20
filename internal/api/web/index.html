@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Temporal Wordflow</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <span id="player-name" class="player-identity" hidden></span>
+  <main class="shell">
+    <header>
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true">✦</div>
+        <div>
+          <p class="eyebrow">A durable word game</p>
+          <h1>Temporal Wordflow</h1>
+          <p class="tagline">Build words. Preserve state. Survive failure.</p>
+        </div>
+      </div>
+      <nav class="header-actions" aria-label="Application links">
+        <a class="quiet workflow-link" href="/leaderboard" target="_blank" rel="noopener">Leaderboard ↗</a>
+        <a id="player-workflow" class="quiet workflow-link" target="_blank" rel="noopener" aria-disabled="true" hidden>Player Workflow ↗</a>
+        <button id="logout" class="quiet" hidden>Log out</button>
+      </nav>
+    </header>
+
+    <div class="status-rail"><span></span> Temporal durable state · active</div>
+
+    <section id="notice" class="notice" hidden></section>
+
+    <section id="auth" class="auth-grid">
+      <form id="login-form" class="card auth-card">
+        <p class="eyebrow">Resume state</p>
+        <h2>Log in</h2>
+        <label>Username<input name="username" autocomplete="username" required minlength="3" maxlength="32"></label>
+        <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"></label>
+        <button class="primary" type="submit">Log in</button>
+      </form>
+      <form id="signup-form" class="card auth-card">
+        <p class="eyebrow">Start durable state</p>
+        <h2>Sign up</h2>
+        <label>Username<input name="username" autocomplete="username" required minlength="3" maxlength="32"></label>
+        <label>Display name<input name="displayName" autocomplete="nickname" required minlength="2" maxlength="24"></label>
+        <label>Password<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label>
+        <button class="primary" type="submit">Create account</button>
+      </form>
+    </section>
+
+    <section id="stats" class="stats" aria-label="Player statistics" hidden></section>
+    <section id="point-shop" class="point-shop" aria-label="Point purchases" hidden>
+      <div>
+        <strong id="streak-freeze-status"></strong>
+        <span>Automatically protects one missed streak day.</span>
+      </div>
+      <button id="buy-streak-freeze" class="quiet"></button>
+    </section>
+    <section id="catalog" hidden>
+      <div class="catalog-heading">
+        <h2>Campaigns</h2>
+      </div>
+      <div id="campaigns" class="campaigns"></div>
+    </section>
+
+    <section id="game" class="game" hidden>
+      <div class="game-heading">
+        <div>
+          <p id="level-label" class="eyebrow"></p>
+          <h2 id="level-title"></h2>
+        </div>
+        <div class="game-meta">
+          <p id="progress"></p>
+          <a id="game-workflow" class="quiet workflow-link" target="_blank" rel="noopener" aria-disabled="true">Game Workflow ↗</a>
+          <button id="exit-game" class="quiet">Campaigns</button>
+        </div>
+      </div>
+
+      <div id="event" class="event" hidden></div>
+      <aside class="bonus-panel" aria-label="Current bonus points">
+        <p class="eyebrow">Bonus points</p>
+        <div class="bonus-item speed">
+          <span>Speed bonus</span>
+          <strong id="speed-bonus-points"></strong>
+          <small id="speed-bonus-countdown" role="timer"></small>
+        </div>
+        <div class="bonus-item hint">
+          <span>Hint bonus</span>
+          <strong id="hint-bonus-points"></strong>
+          <small>Hints reduce this bonus</small>
+        </div>
+        <div class="bonus-item accuracy">
+          <span>Accuracy bonus</span>
+          <strong id="accuracy-bonus-points"></strong>
+          <small>−2 per incorrect guess</small>
+        </div>
+      </aside>
+      <div class="game-layout">
+        <div class="game-play">
+          <div id="crossword" class="crossword" aria-label="Crossword grid"></div>
+          <div class="cell-legend" aria-label="Crossword letter colours">
+            <span><i class="legend-cell found"></i>Found word</span>
+            <span><i class="legend-cell hinted"></i>Hint-revealed letter</span>
+          </div>
+          <p id="guess" class="guess" aria-live="polite">&nbsp;</p>
+          <div id="letters" class="letters" aria-label="Available letters"></div>
+
+          <div class="actions">
+            <button id="clear" class="quiet">Clear</button>
+            <button id="submit" class="primary">Submit word</button>
+            <button id="shuffle" class="quiet">Shuffle</button>
+          </div>
+
+          <div class="hints" aria-label="Hints">
+            <button data-hint="letter">Reveal one</button>
+            <button data-hint="brush">Reveal two</button>
+            <button data-hint="word">Resolve word</button>
+          </div>
+        </div>
+
+        <aside class="rejected-panel" aria-labelledby="rejected-title">
+          <h3 id="rejected-title">Not in the wordflow</h3>
+          <ul id="rejected-words" class="rejected-words"></ul>
+          <p id="rejected-empty" class="rejected-empty">No missed words yet.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="complete" class="card complete" hidden>
+      <p class="eyebrow">Workflow completed</p>
+      <h2>Execution succeeded.</h2>
+      <p id="complete-summary"></p>
+      <button id="continue" class="primary">Next wordflow</button>
+    </section>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

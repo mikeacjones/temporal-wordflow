@@ -1,4 +1,9 @@
 .DS_Store
 .temporal/
 dist/
-
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+crash.*.log
