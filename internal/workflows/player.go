@@ -15,7 +15,6 @@ import (
 const (
 	playerTimeZone        = "America/Toronto"
 	streakFreezePointCost = 50
-	maxPlayerSessions     = 5
 )
 
 var torontoLocation = mustLoadLocation(playerTimeZone)
@@ -30,10 +29,6 @@ type PlayerState struct {
 	PlayerID             string                            `json:"playerId"`
 	DisplayName          string                            `json:"displayName"`
 	PasswordHash         string                            `json:"passwordHash"`
-	// Sessions remains for API builds that still authenticate with hashed
-	// cookies. JWT-based API builds ignore this field and verify signatures
-	// outside the Workflow.
-	Sessions             []PlayerSession                   `json:"sessions,omitempty"`
 	CreatedAt            time.Time                         `json:"createdAt"`
 	LastSeenAt           time.Time                         `json:"lastSeenAt"`
 	LastCompletionDay    string                            `json:"lastCompletionDay"`
@@ -49,24 +44,9 @@ type PlayerState struct {
 }
 
 type AuthenticatePlayerInput struct {
-	DisplayName  string    `json:"displayName"`
-	PasswordHash string    `json:"passwordHash"`
-	Register     bool      `json:"register"`
-	TokenHash    string    `json:"tokenHash,omitempty"`
-	ExpiresAt    time.Time `json:"expiresAt,omitempty"`
-}
-
-type PlayerSession struct {
-	TokenHash string    `json:"tokenHash"`
-	ExpiresAt time.Time `json:"expiresAt"`
-}
-
-type RevokeSessionInput struct {
-	TokenHash string `json:"tokenHash"`
-}
-
-type ResumeSessionInput struct {
-	TokenHash string `json:"tokenHash"`
+	DisplayName  string `json:"displayName"`
+	PasswordHash string `json:"passwordHash"`
+	Register     bool   `json:"register"`
 }
 
 type StartLevelInput struct {
@@ -106,17 +86,6 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 		return err
 	}
 
-	if err := workflow.SetQueryHandler(ctx, QueryPlayerSession, func(tokenHash string) (game.PlayerView, error) {
-		for _, session := range state.Sessions {
-			if session.TokenHash == tokenHash && workflow.Now(ctx).Before(session.ExpiresAt) {
-				return playerView(state), nil
-			}
-		}
-		return game.PlayerView{}, temporal.NewApplicationError("session is invalid or expired", "invalid_session")
-	}); err != nil {
-		return err
-	}
-
 	if err := workflow.SetUpdateHandlerWithOptions(ctx, UpdateAuthenticatePlayer,
 		func(ctx workflow.Context, update AuthenticatePlayerInput) (game.PlayerView, error) {
 			if err := lock.Lock(ctx); err != nil {
@@ -133,17 +102,6 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 				state.PasswordHash = update.PasswordHash
 				state.DisplayName = update.DisplayName
 			}
-			if update.TokenHash != "" && update.ExpiresAt.After(now) {
-				// Persist hashed cookies for older API builds that still
-				// authenticate through QueryPlayerSession / ResumeSession.
-				state.Sessions = activePlayerSessions(state.Sessions, now, update.TokenHash)
-				state.Sessions = append(state.Sessions, PlayerSession{
-					TokenHash: update.TokenHash, ExpiresAt: update.ExpiresAt,
-				})
-				if len(state.Sessions) > maxPlayerSessions {
-					state.Sessions = state.Sessions[len(state.Sessions)-maxPlayerSessions:]
-				}
-			}
 			state.LastSeenAt = now
 			expireStreakIfNeeded(state, now)
 			changed.SendAsync(true)
@@ -151,41 +109,6 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 		}, workflow.UpdateHandlerOptions{
 			Validator: func(_ workflow.Context, update AuthenticatePlayerInput) error {
 				return validateCredentials(state, update)
-			},
-		}); err != nil {
-		return err
-	}
-
-	if err := workflow.SetUpdateHandler(ctx, UpdateRevokeSession, func(ctx workflow.Context, update RevokeSessionInput) (game.PlayerView, error) {
-		if err := lock.Lock(ctx); err != nil {
-			return game.PlayerView{}, err
-		}
-		defer lock.Unlock()
-		state.Sessions = activePlayerSessions(state.Sessions, workflow.Now(ctx), update.TokenHash)
-		changed.SendAsync(true)
-		return playerView(state), nil
-	}); err != nil {
-		return err
-	}
-
-	if err := workflow.SetUpdateHandlerWithOptions(ctx, UpdateResumeSession,
-		func(ctx workflow.Context, update ResumeSessionInput) (game.PlayerView, error) {
-			if err := lock.Lock(ctx); err != nil {
-				return game.PlayerView{}, err
-			}
-			defer lock.Unlock()
-
-			now := workflow.Now(ctx)
-			if err := validatePlayerSession(state, update.TokenHash, now); err != nil {
-				return game.PlayerView{}, err
-			}
-			state.LastSeenAt = now
-			expireStreakIfNeeded(state, now)
-			changed.SendAsync(true)
-			return playerView(state), nil
-		}, workflow.UpdateHandlerOptions{
-			Validator: func(ctx workflow.Context, update ResumeSessionInput) error {
-				return validatePlayerSession(state, update.TokenHash, workflow.Now(ctx))
 			},
 		}); err != nil {
 		return err
@@ -510,25 +433,6 @@ func validateCredentials(state *PlayerState, update AuthenticatePlayerInput) err
 		return temporal.NewApplicationError("invalid username or password", "invalid_credentials")
 	}
 	return nil
-}
-
-func activePlayerSessions(sessions []PlayerSession, now time.Time, removeHash string) []PlayerSession {
-	active := make([]PlayerSession, 0, len(sessions))
-	for _, session := range sessions {
-		if session.TokenHash != removeHash && now.Before(session.ExpiresAt) {
-			active = append(active, session)
-		}
-	}
-	return active
-}
-
-func validatePlayerSession(state *PlayerState, tokenHash string, now time.Time) error {
-	for _, session := range state.Sessions {
-		if session.TokenHash == tokenHash && now.Before(session.ExpiresAt) {
-			return nil
-		}
-	}
-	return temporal.NewApplicationError("session is invalid or expired", "invalid_session")
 }
 
 func mustLoadLocation(name string) *time.Location {

@@ -86,12 +86,6 @@ func newSessionToken(secret []byte, playerID string, issuedAt, expiresAt time.Ti
 	return unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
-// Older pinned Player Workflows still accept this field during login.
-func sessionTokenHash(raw string) string {
-	digest := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(digest[:])
-}
-
 func setSessionCookie(writer http.ResponseWriter, request *http.Request, token string, expiresAt time.Time) {
 	http.SetCookie(writer, &http.Cookie{
 		Name: sessionCookieName, Value: token,

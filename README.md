@@ -10,8 +10,8 @@ username becomes the human-readable entity ID in `player/{username}` and
 `wordflow-level/{username}/{campaign}/{level}`. Before calling Temporal, the API derives a stable
 PBKDF2-SHA256 password hash using a username-derived salt. The browser keeps the
 API-signed JWT in an HTTP-only cookie. The Player Workflow stores the password
-hash (and still accepts hashed session cookies for older API builds), while the
-stateless API verifies the JWT before calling Temporal.
+hash used to claim the account, while the stateless API verifies the JWT before
+calling Temporal.
 
 The public display name receives a stable eight-character discriminator derived
 from that unique username, such as `Michael#8f3a1c2d`. The tagged value is stored
@@ -23,7 +23,7 @@ on first registration and used by the leaderboard.
 | --- | --- | --- |
 | `CatalogWorkflow` | Registered games and references to their campaign Workflows | Singleton entity; Continue-As-New keeps history bounded |
 | `WordflowCampaignWorkflow` | One campaign's levels, unlock schedule, prerequisites, availability dates, and expiration timer | One long-lived entity per campaign |
-| `PlayerWorkflow` | Password hash, optional hashed sessions for older API builds, display name, campaign progress, points, rewards, streaks, and the active level reference | Long-lived entity; Continue-As-New keeps history bounded |
+| `PlayerWorkflow` | Password hash, display name, campaign progress, points, rewards, streaks, and the active level reference | Long-lived entity; Continue-As-New keeps history bounded |
 | `WordflowLevelWorkflow` | One player's level answers, guesses, revealed cells, shuffles, hints, timing, scoring, and completion | Runs until the level is solved; can Continue-As-New after heavy use |
 | `LeaderboardWorkflow` | The top 100 absolute lifetime-point snapshots | Singleton entity; Continue-As-New keeps history bounded |
 | HTTP API | Nothing durable; verifies signed session JWTs and translates HTTP requests into Updates and Queries | Stateless |
@@ -53,9 +53,8 @@ uses the same Update against an existing Workflow without Update-with-Start, so
 an unknown username returns `account does not exist` and cannot reserve a name.
 After that credential check, the API issues a 30-day HMAC-signed JWT. Normal
 requests validate it entirely in the API and query player state only when the
-endpoint actually needs that state. The Player Workflow still records hashed
-session cookies when the login Update includes them, so older API builds that
-resume or query those hashes keep working during a rolling deploy.
+endpoint actually needs that state. Session creation, validation, and logout
+remain HTTP API concerns; the Player Workflow stores no session tokens.
 
 After a completed level updates Player state, a small Activity uses
 Signal-With-Start to publish an absolute score snapshot to `leaderboard/global`.

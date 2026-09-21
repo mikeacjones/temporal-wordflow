@@ -200,11 +200,9 @@ func (s *Server) openSession(writer http.ResponseWriter, request *http.Request) 
 }
 
 type authenticatePlayerUpdate struct {
-	DisplayName  string    `json:"displayName"`
-	PasswordHash string    `json:"passwordHash"`
-	Register     bool      `json:"register"`
-	TokenHash    string    `json:"tokenHash,omitempty"`
-	ExpiresAt    time.Time `json:"expiresAt,omitempty"`
+	DisplayName  string `json:"displayName"`
+	PasswordHash string `json:"passwordHash"`
+	Register     bool   `json:"register"`
 }
 
 func (s *Server) authenticatePlayer(ctx context.Context, username, displayName, passwordHash, requestID string,
@@ -218,9 +216,6 @@ func (s *Server) authenticatePlayer(ctx context.Context, username, displayName, 
 	}
 	update := authenticatePlayerUpdate{
 		DisplayName: displayName, PasswordHash: passwordHash, Register: register,
-		// These two fields keep login compatible with accounts pinned to the
-		// previous Worker version. The new Workflow ignores them.
-		TokenHash: sessionTokenHash(rawToken), ExpiresAt: expiresAt,
 	}
 	workflowID := workflows.PlayerWorkflowID(username)
 	var view game.PlayerView
@@ -254,7 +249,7 @@ func (s *Server) getPlayer(writer http.ResponseWriter, request *http.Request) {
 		writeError(writer, http.StatusUnauthorized, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, player)
+	writeJSON(writer, http.StatusOK, newPlayerResponse(player))
 }
 
 func (s *Server) getPlayerWorkflowLink(writer http.ResponseWriter, request *http.Request) {
@@ -267,19 +262,86 @@ func (s *Server) getPlayerWorkflowLink(writer http.ResponseWriter, request *http
 }
 
 type sessionResponse struct {
-	Player  game.PlayerView  `json:"player"`
+	Player  playerResponse   `json:"player"`
 	Catalog *catalogResponse `json:"catalog,omitempty"`
-	Game    *game.GameView   `json:"game,omitempty"`
+	Game    *gameResponse    `json:"game,omitempty"`
+}
+
+type playerResponse struct {
+	DisplayName          string              `json:"displayName"`
+	CurrentStreak        int                 `json:"currentStreak"`
+	BestStreak           int                 `json:"bestStreak"`
+	Points               int                 `json:"points"`
+	LifetimePointsEarned int                 `json:"lifetimePointsEarned"`
+	StreakFreeze         bool                `json:"streakFreeze"`
+	StreakFreezeCost     int                 `json:"streakFreezeCost"`
+	CompletedLevelCount  int                 `json:"completedLevelCount"`
+	ActiveGame           *activeGameResponse `json:"activeGame,omitempty"`
+}
+
+type activeGameResponse struct {
+	CampaignID string `json:"campaignId"`
+	Level      int    `json:"level"`
 }
 
 type catalogCampaignResponse struct {
-	campaign.View
-	WorkflowURL string `json:"workflowUrl"`
+	CampaignID      string               `json:"campaignId"`
+	Title           string               `json:"title"`
+	Description     string               `json:"description"`
+	Status          campaign.Status      `json:"status"`
+	StartsAt        *time.Time           `json:"startsAt,omitempty"`
+	EndsAt          *time.Time           `json:"endsAt,omitempty"`
+	LockedReason    string               `json:"lockedReason,omitempty"`
+	NextLevel       int                  `json:"nextLevel"`
+	CompletedLevels int                  `json:"completedLevels"`
+	TotalLevels     int                  `json:"totalLevels"`
+	Levels          []campaign.LevelView `json:"levels"`
+	WorkflowURL     string               `json:"workflowUrl"`
 }
 
 type catalogResponse struct {
-	Games     []campaign.GameSummary    `json:"games"`
 	Campaigns []catalogCampaignResponse `json:"campaigns"`
+}
+
+type gameResponse struct {
+	CampaignID    string                `json:"campaignId"`
+	Level         int                   `json:"level"`
+	Title         string                `json:"title"`
+	Letters       string                `json:"letters"`
+	Cells         []game.CellView       `json:"cells"`
+	FoundWords    int                   `json:"foundWords"`
+	TotalWords    int                   `json:"totalWords"`
+	Attempts      int                   `json:"attempts"`
+	RejectedWords []string              `json:"rejectedWords"`
+	SpeedBonuses  []game.SpeedBonusTier `json:"speedBonuses"`
+	HintBonus     int                   `json:"hintBonus"`
+	AccuracyBonus int                   `json:"accuracyBonus"`
+	Hints         game.HintInventory    `json:"hints"`
+	HintPrices    game.HintPrices       `json:"hintPrices"`
+	Complete      bool                  `json:"complete"`
+	SpecialEvent  *game.SpecialEvent    `json:"specialEvent,omitempty"`
+	Score         *gameScoreResponse    `json:"score,omitempty"`
+}
+
+type gameScoreResponse struct {
+	Points          int   `json:"points"`
+	BasePoints      int   `json:"basePoints"`
+	SpeedBonus      int   `json:"speedBonus"`
+	AccuracyBonus   int   `json:"accuracyBonus"`
+	HintBonus       int   `json:"hintBonus"`
+	DurationSeconds int64 `json:"durationSeconds"`
+}
+
+type guessResponse struct {
+	Outcome string       `json:"outcome"`
+	Game    gameResponse `json:"game"`
+}
+
+type hintResponse struct {
+	Outcome         string       `json:"outcome"`
+	Game            gameResponse `json:"game"`
+	PointsSpent     int          `json:"pointsSpent,omitempty"`
+	PointsRemaining *int         `json:"pointsRemaining,omitempty"`
 }
 
 func (s *Server) getCatalog(writer http.ResponseWriter, request *http.Request) {
@@ -297,7 +359,7 @@ func (s *Server) getCatalog(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) sessionResponse(ctx context.Context, player game.PlayerView) (sessionResponse, error) {
-	response := sessionResponse{Player: player}
+	response := sessionResponse{Player: newPlayerResponse(player)}
 	if player.ActiveGame != nil {
 		result, err := s.temporal.QueryWorkflow(ctx, player.ActiveGame.WorkflowID, "", workflows.QueryWordflowLevelState)
 		if err != nil {
@@ -307,7 +369,8 @@ func (s *Server) sessionResponse(ctx context.Context, player game.PlayerView) (s
 		if err := result.Get(&gameView); err != nil {
 			return sessionResponse{}, err
 		}
-		response.Game = &gameView
+		compactGame := newGameResponse(gameView)
+		response.Game = &compactGame
 		return response, nil
 	}
 	catalog, err := s.catalog(ctx, player)
@@ -347,10 +410,7 @@ func (s *Server) catalog(ctx context.Context, player game.PlayerView) (catalogRe
 		return catalogResponse{}, err
 	}
 
-	response := catalogResponse{
-		Games:     catalogView.Games,
-		Campaigns: make([]catalogCampaignResponse, len(catalogView.Campaigns)),
-	}
+	response := catalogResponse{Campaigns: make([]catalogCampaignResponse, len(catalogView.Campaigns))}
 	progress := campaignPlayerProgress(player)
 	group, queryCtx := errgroup.WithContext(ctx)
 	for index, registration := range catalogView.Campaigns {
@@ -365,10 +425,8 @@ func (s *Server) catalog(ctx context.Context, player game.PlayerView) (catalogRe
 			if err := result.Get(&view); err != nil {
 				return err
 			}
-			response.Campaigns[index] = catalogCampaignResponse{
-				View:        view,
-				WorkflowURL: workflowUIURL(s.temporalUIURL, s.temporalNamespace, registration.WorkflowID, ""),
-			}
+			response.Campaigns[index] = newCatalogCampaignResponse(view,
+				workflowUIURL(s.temporalUIURL, s.temporalNamespace, registration.WorkflowID, ""))
 			return nil
 		})
 	}
@@ -402,7 +460,7 @@ func (s *Server) buyStreakFreeze(writer http.ResponseWriter, request *http.Reque
 		writeTemporalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, view)
+	writeJSON(writer, http.StatusOK, newPlayerResponse(view))
 }
 
 type startGameRequest struct {
@@ -437,7 +495,7 @@ func (s *Server) startGame(writer http.ResponseWriter, request *http.Request) {
 		writeTemporalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, view)
+	writeJSON(writer, http.StatusOK, newPlayerResponse(view))
 }
 
 func (s *Server) getGame(writer http.ResponseWriter, request *http.Request) {
@@ -462,7 +520,7 @@ func (s *Server) getGame(writer http.ResponseWriter, request *http.Request) {
 		writeTemporalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, view)
+	writeJSON(writer, http.StatusOK, newGameResponse(view))
 }
 
 func (s *Server) getWordflowLevelWorkflowLink(writer http.ResponseWriter, request *http.Request) {
@@ -511,7 +569,7 @@ func (s *Server) submitGuess(writer http.ResponseWriter, request *http.Request) 
 		writeTemporalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, result)
+	writeJSON(writer, http.StatusOK, guessResponse{Outcome: result.Outcome, Game: newGameResponse(result.Game)})
 }
 
 type hintRequest struct {
@@ -546,7 +604,10 @@ func (s *Server) useHint(writer http.ResponseWriter, request *http.Request) {
 		writeTemporalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, result)
+	writeJSON(writer, http.StatusOK, hintResponse{
+		Outcome: result.Outcome, Game: newGameResponse(result.Game),
+		PointsSpent: result.PointsSpent, PointsRemaining: result.PointsRemaining,
+	})
 }
 
 func (s *Server) shuffle(writer http.ResponseWriter, request *http.Request) {
@@ -578,7 +639,47 @@ func (s *Server) shuffle(writer http.ResponseWriter, request *http.Request) {
 		writeTemporalError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusOK, view)
+	writeJSON(writer, http.StatusOK, newGameResponse(view))
+}
+
+func newPlayerResponse(player game.PlayerView) playerResponse {
+	response := playerResponse{
+		DisplayName: player.DisplayName, CurrentStreak: player.CurrentStreak, BestStreak: player.BestStreak,
+		Points: player.Points, LifetimePointsEarned: player.LifetimePointsEarned,
+		StreakFreeze: player.StreakFreeze, StreakFreezeCost: player.StreakFreezeCost,
+		CompletedLevelCount: player.CompletedLevelCount,
+	}
+	if player.ActiveGame != nil {
+		response.ActiveGame = &activeGameResponse{CampaignID: player.ActiveGame.CampaignID, Level: player.ActiveGame.Level}
+	}
+	return response
+}
+
+func newCatalogCampaignResponse(view campaign.View, workflowURL string) catalogCampaignResponse {
+	return catalogCampaignResponse{
+		CampaignID: view.CampaignID, Title: view.Title, Description: view.Description, Status: view.Status,
+		StartsAt: view.StartsAt, EndsAt: view.EndsAt, LockedReason: view.LockedReason,
+		NextLevel: view.NextLevel, CompletedLevels: view.CompletedLevels, TotalLevels: view.TotalLevels,
+		Levels: view.Levels, WorkflowURL: workflowURL,
+	}
+}
+
+func newGameResponse(view game.GameView) gameResponse {
+	response := gameResponse{
+		CampaignID: view.CampaignID, Level: view.Level, Title: view.Title, Letters: view.Letters,
+		Cells: view.Cells, FoundWords: view.FoundWords, TotalWords: view.TotalWords, Attempts: view.Attempts,
+		RejectedWords: view.RejectedWords, SpeedBonuses: view.SpeedBonuses,
+		HintBonus: view.HintBonus, AccuracyBonus: view.AccuracyBonus,
+		Hints: view.Hints, HintPrices: view.HintPrices, Complete: view.Complete, SpecialEvent: view.SpecialEvent,
+	}
+	if view.Score != nil {
+		response.Score = &gameScoreResponse{
+			Points: view.Score.Points, BasePoints: view.Score.BasePoints, SpeedBonus: view.Score.SpeedBonus,
+			AccuracyBonus: view.Score.AccuracyBonus, HintBonus: view.Score.HintBonus,
+			DurationSeconds: view.Score.DurationSeconds,
+		}
+	}
+	return response
 }
 
 func (s *Server) authenticatedPlayerID(request *http.Request) (string, error) {

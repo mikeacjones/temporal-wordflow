@@ -21,8 +21,6 @@ const (
 	QueryCampaignView       = "campaign-view"
 	QueryWordflowLevel      = "wordflow-level"
 	QueryPlayerState        = "player-state"
-	// Kept so API builds that still validate hashed cookies can query sessions.
-	QueryPlayerSession      = "player-session"
 	QueryWordflowLevelState = "wordflow-level-state"
 	QueryLeaderboard        = "leaderboard"
 
@@ -30,16 +28,13 @@ const (
 	UpdateRegisterCampaign = "register-campaign"
 	// Keep the existing wire name so accounts pinned to older Workers can log in.
 	UpdateAuthenticatePlayer = "open-session"
-	// Kept for API builds that still resume/revoke hashed session cookies.
-	UpdateRevokeSession    = "revoke-session"
-	UpdateResumeSession    = "resume-session"
-	UpdateStartLevel       = "start-level"
-	UpdateSpendPoints      = "spend-points"
-	UpdateBuyStreakFreeze  = "buy-streak-freeze"
-	UpdateSubmitGuess      = "submit-guess"
-	UpdateUseHint          = "use-hint"
-	UpdateShuffle          = "shuffle"
-	SignalLeaderboardScore = "record-score"
+	UpdateStartLevel         = "start-level"
+	UpdateSpendPoints        = "spend-points"
+	UpdateBuyStreakFreeze    = "buy-streak-freeze"
+	UpdateSubmitGuess        = "submit-guess"
+	UpdateUseHint            = "use-hint"
+	UpdateShuffle            = "shuffle"
+	SignalLeaderboardScore   = "record-score"
 
 	ActivityRegisterCampaign     = "RegisterCampaign"
 	ActivityResolveWordflowLevel = "ResolveWordflowLevel"
