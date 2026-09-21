@@ -308,6 +308,11 @@ func applyLevelResult(state *PlayerState, result campaign.LevelResult) bool {
 	}
 
 	state.ActiveGame = nil
+	if result.TimedOut {
+		progress.Failed = true
+		state.LastSeenAt = result.CompletedAt
+		return false
+	}
 	updateStreak(state, result.CompletedAt)
 	points := 0
 	for _, award := range result.Awards {

@@ -172,6 +172,32 @@ func TestCompletionAdvancesCampaignAndAwardsConfiguredPoints(t *testing.T) {
 	}))
 }
 
+func TestTimeoutEndsAttemptWithoutAdvancingOrAwardingPoints(t *testing.T) {
+	timedOutAt := time.Date(2026, time.September, 21, 12, 0, 0, 0, time.UTC)
+	state := &PlayerState{
+		PlayerID: "player",
+		Campaigns: []campaign.PlayerCampaignProgress{{
+			CampaignID: "daily", NextLevel: 2, TotalLevels: 3, CompletedLevels: 1,
+		}},
+		ActiveGame: &game.ActiveGame{CampaignID: "daily", Level: 2, TotalLevels: 3},
+		Points:     50,
+	}
+
+	published := applyLevelResult(state, campaign.LevelResult{
+		GameID: campaign.GameWordflow, CampaignID: "daily", Level: 2,
+		Attempts: 4, CompletedAt: timedOutAt, TimedOut: true,
+	})
+
+	require.False(t, published)
+	require.Nil(t, state.ActiveGame)
+	require.True(t, state.Campaigns[0].Failed)
+	require.Equal(t, 2, state.Campaigns[0].NextLevel)
+	require.Equal(t, 1, state.Campaigns[0].CompletedLevels)
+	require.Equal(t, 50, state.Points)
+	require.Empty(t, state.CompletedLevels)
+	require.Empty(t, state.Rewards)
+}
+
 func TestSpendPointsValidation(t *testing.T) {
 	state := &PlayerState{
 		Points:     25,

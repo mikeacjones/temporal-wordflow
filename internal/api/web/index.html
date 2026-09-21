@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Temporal Wordflow</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body data-session="unknown">
@@ -63,6 +64,7 @@
       <button id="buy-streak-freeze" class="quiet"></button>
     </section>
     <section id="catalog" hidden>
+      <div id="daily-challenge-slot" class="daily-challenge-slot" hidden></div>
       <div class="catalog-heading">
         <h2>Campaigns</h2>
       </div>
@@ -76,6 +78,7 @@
           <h2 id="level-title"></h2>
         </div>
         <div class="game-meta">
+          <p id="level-deadline" class="level-deadline" role="timer" hidden></p>
           <p id="progress"></p>
           <a id="game-workflow" class="quiet workflow-link" target="_blank" rel="noopener" aria-disabled="true">Game Workflow ↗</a>
           <button id="exit-game" class="quiet">Campaigns</button>
@@ -133,9 +136,19 @@
     </section>
 
     <section id="complete" class="card complete" hidden>
-      <p class="eyebrow">Workflow completed</p>
-      <h2>Execution succeeded.</h2>
+      <p id="complete-eyebrow" class="eyebrow">Workflow completed</p>
+      <h2 id="complete-title">Execution succeeded.</h2>
       <p id="complete-summary"></p>
+      <div id="timeout-solution" class="timeout-solution" hidden>
+        <h3>Puzzle solution</h3>
+        <div id="timeout-crossword" class="crossword timeout-crossword" aria-label="Completed puzzle solution"></div>
+        <div class="cell-legend" aria-label="Puzzle solution colours">
+          <span><i class="legend-cell found"></i>You found</span>
+          <span><i class="legend-cell hinted"></i>Hint revealed</span>
+          <span><i class="legend-cell missed"></i>Missed</span>
+        </div>
+        <ul id="timeout-answers" class="timeout-answers" aria-label="Puzzle answers"></ul>
+      </div>
       <button id="continue" class="primary">Checking next level…</button>
     </section>
   </main>

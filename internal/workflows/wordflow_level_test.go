@@ -112,6 +112,85 @@ func TestGameScoreUsesTimeMistakesAndHints(t *testing.T) {
 	}, score)
 }
 
+func TestLevelGameplaySettingsOverrideDefaults(t *testing.T) {
+	startedAt := time.Date(2026, time.September, 20, 12, 0, 0, 0, time.UTC)
+	state := &WordflowLevelState{
+		Puzzle: game.Puzzle{
+			TimeLimitSeconds: 180,
+			BasePoints:       20,
+			HintPrices:       game.HintPrices{Letter: 15, Brush: 30, Word: 45},
+		},
+		StartedAt:   startedAt,
+		CompletedAt: startedAt.Add(30 * time.Second),
+	}
+
+	score := calculateGameScore(state)
+	view := wordflowLevelView(state)
+	require.Equal(t, 20, score.BasePoints)
+	require.Equal(t, 50, score.Points)
+	require.Equal(t, game.HintPrices{Letter: 15, Brush: 30, Word: 45}, view.HintPrices)
+	require.NotNil(t, view.ExpiresAt)
+	require.Equal(t, startedAt.Add(180*time.Second), *view.ExpiresAt)
+	require.Equal(t, 15, mustHintPointCost(t, state.Puzzle, game.HintLetter))
+	require.Equal(t, 30, mustHintPointCost(t, state.Puzzle, game.HintBrush))
+	require.Equal(t, 45, mustHintPointCost(t, state.Puzzle, game.HintWord))
+}
+
+func TestWordflowLevelWorkflowEndsWhenHardLimitExpires(t *testing.T) {
+	puzzle := testPuzzle(t, 1)
+	puzzle.TimeLimitSeconds = 60
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(WordflowLevelWorkflow, WordflowLevelWorkflowInput{
+		PlayerID: "test-player", CampaignID: "daily", Puzzle: puzzle,
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var result campaign.LevelResult
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.True(t, result.TimedOut)
+	require.Empty(t, result.Awards)
+	require.False(t, result.CompletedAt.IsZero())
+}
+
+func TestTimedOutViewRevealsSolutionAndDistinguishesMissedWords(t *testing.T) {
+	puzzle := testPuzzle(t, 1)
+	state := &WordflowLevelState{
+		Puzzle:       puzzle,
+		FoundAnswers: []string{puzzle.Words[0].Answer},
+		TimedOut:     true,
+	}
+
+	view := wordflowLevelView(state)
+	require.Len(t, view.SolutionWords, len(puzzle.Words))
+	require.True(t, view.SolutionWords[0].Found)
+	require.False(t, view.SolutionWords[1].Found)
+	require.NotEmpty(t, view.Cells)
+	require.True(t, hasMissedSolutionCell(view.Cells))
+	for _, cell := range view.Cells {
+		require.True(t, cell.Revealed)
+		require.NotEmpty(t, cell.Letter)
+	}
+}
+
+func hasMissedSolutionCell(cells []game.CellView) bool {
+	for _, cell := range cells {
+		if cell.Missed {
+			return true
+		}
+	}
+	return false
+}
+
+func mustHintPointCost(t *testing.T, puzzle game.Puzzle, hint game.HintType) int {
+	t.Helper()
+	value, err := hintPointCost(puzzle, hint)
+	require.NoError(t, err)
+	return value
+}
+
 func TestSpeedBonusTiersUseTheWorkflowStartTime(t *testing.T) {
 	startedAt := time.Date(2026, time.September, 20, 12, 0, 0, 0, time.UTC)
 	require.Equal(t, []game.SpeedBonusTier{
@@ -202,6 +281,7 @@ func TestHintsSkipLettersVisibleFromFoundWords(t *testing.T) {
 
 func TestPaidHintSpendsPointsThroughActivity(t *testing.T) {
 	puzzle := testPuzzle(t, 1)
+	puzzle.HintPrices.Letter = 15
 	gameID := WordflowLevelWorkflowID("test-player", "test-campaign", puzzle.Level)
 
 	suite := testsuite.WorkflowTestSuite{}
@@ -212,10 +292,10 @@ func TestPaidHintSpendsPointsThroughActivity(t *testing.T) {
 		UpdateID:         "spend/" + gameID + "/buy-letter",
 		Spend: SpendPointsInput{
 			LevelWorkflowID: gameID,
-			Amount:          letterHintPointCost,
+			Amount:          15,
 			Reason:          "wordflow/letter-hint",
 		},
-	}).Return(SpendPointsResult{Spent: letterHintPointCost, Remaining: 40}, nil).Once()
+	}).Return(SpendPointsResult{Spent: 15, Remaining: 40}, nil).Once()
 
 	var hintResult game.HintResult
 	env.RegisterDelayedCallback(func() {
@@ -244,7 +324,7 @@ func TestPaidHintSpendsPointsThroughActivity(t *testing.T) {
 	}})
 
 	require.NoError(t, env.GetWorkflowError())
-	require.Equal(t, letterHintPointCost, hintResult.PointsSpent)
+	require.Equal(t, 15, hintResult.PointsSpent)
 	require.NotNil(t, hintResult.PointsRemaining)
 	require.Equal(t, 40, *hintResult.PointsRemaining)
 	env.AssertExpectations(t)

@@ -38,7 +38,9 @@ type WordflowLevelState struct {
 	WordHintsUsed    int                `json:"wordHintsUsed"`
 	Hints            game.HintInventory `json:"hints"`
 	Complete         bool               `json:"complete"`
+	TimedOut         bool               `json:"timedOut,omitempty"`
 	CompletedAt      time.Time          `json:"completedAt"`
+	TimedOutAt       time.Time          `json:"timedOutAt,omitempty"`
 	Score            game.GameScore     `json:"score"`
 	ShuffleCount     int                `json:"shuffleCount"`
 }
@@ -52,12 +54,6 @@ type UseHintInput struct {
 }
 
 type ShuffleInput struct{}
-
-const (
-	letterHintPointCost = 10
-	brushHintPointCost  = 20
-	wordHintPointCost   = 30
-)
 
 var speedBonusPoints = []int{10, 7, 4}
 
@@ -79,6 +75,10 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 		}
 		defer lock.Unlock()
 
+		if finishLevelIfExpired(state, workflow.Now(updateCtx)) {
+			changed.SendAsync(true)
+			return game.GuessResult{Outcome: "timed_out", Game: wordflowLevelView(state)}, nil
+		}
 		if state.Complete {
 			return game.GuessResult{Outcome: "complete", Game: wordflowLevelView(state)}, nil
 		}
@@ -118,6 +118,10 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 		}
 		defer lock.Unlock()
 
+		if finishLevelIfExpired(state, workflow.Now(updateCtx)) {
+			changed.SendAsync(true)
+			return game.HintResult{Outcome: "timed_out", Game: wordflowLevelView(state)}, nil
+		}
 		if state.Complete {
 			return game.HintResult{Outcome: "complete", Game: wordflowLevelView(state)}, nil
 		}
@@ -129,7 +133,7 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 		pointsSpent := 0
 		var pointsRemaining *int
 		if freeHintCount(state, update.Hint) == 0 {
-			price, err := hintPointCost(update.Hint)
+			price, err := hintPointCost(state.Puzzle, update.Hint)
 			if err != nil {
 				return game.HintResult{}, err
 			}
@@ -150,6 +154,13 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 			}
 			pointsSpent = spend.Spent
 			pointsRemaining = &spend.Remaining
+		}
+		if finishLevelIfExpired(state, workflow.Now(updateCtx)) {
+			changed.SendAsync(true)
+			return game.HintResult{
+				Outcome: "timed_out", Game: wordflowLevelView(state),
+				PointsSpent: pointsSpent, PointsRemaining: pointsRemaining,
+			}, nil
 		}
 
 		outcome, err := applyHint(state, update.Hint, pointsSpent > 0)
@@ -172,6 +183,10 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 			return game.GameView{}, err
 		}
 		defer lock.Unlock()
+		if finishLevelIfExpired(state, workflow.Now(updateCtx)) {
+			changed.SendAsync(true)
+			return wordflowLevelView(state), nil
+		}
 		if state.Complete {
 			return wordflowLevelView(state), nil
 		}
@@ -184,9 +199,31 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 		return campaign.LevelResult{}, err
 	}
 
-	for !state.Complete {
-		var ignored bool
-		changed.Receive(ctx, &ignored)
+	var deadline workflow.Future
+	if !state.Complete && !state.TimedOut {
+		if expiresAt := wordflowLevelExpiresAt(state); expiresAt != nil {
+			remaining := expiresAt.Sub(workflow.Now(ctx))
+			if remaining <= 0 {
+				finishLevelIfExpired(state, workflow.Now(ctx))
+			} else {
+				deadline = workflow.NewTimer(ctx, remaining)
+			}
+		}
+	}
+
+	for !state.Complete && !state.TimedOut {
+		selector := workflow.NewSelector(ctx)
+		selector.AddReceive(changed, func(channel workflow.ReceiveChannel, _ bool) {
+			var ignored bool
+			channel.Receive(ctx, &ignored)
+		})
+		if deadline != nil {
+			selector.AddFuture(deadline, func(workflow.Future) {
+				finishLevelIfExpired(state, workflow.Now(ctx))
+				deadline = nil
+			})
+		}
+		selector.Select(ctx)
 		if shouldContinueWordflowLevel(ctx) {
 			if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 				return campaign.LevelResult{}, err
@@ -201,9 +238,15 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 
 	result := campaign.LevelResult{
 		GameID: campaign.GameWordflow, CampaignID: state.CampaignID,
-		Level: state.Puzzle.Level, Attempts: state.Attempts, CompletedAt: state.CompletedAt,
-		Awards: []campaign.PointAward{{Description: "Wordflow score", Points: state.Score.Points}},
+		Level: state.Puzzle.Level, Attempts: state.Attempts,
 	}
+	if state.TimedOut {
+		result.CompletedAt = state.TimedOutAt
+		result.TimedOut = true
+		return result, nil
+	}
+	result.CompletedAt = state.CompletedAt
+	result.Awards = []campaign.PointAward{{Description: "Wordflow score", Points: state.Score.Points}}
 	if state.Puzzle.CompletionBonus > 0 {
 		result.Awards = append(result.Awards, campaign.PointAward{
 			Description: state.Puzzle.CompletionBonusName,
@@ -279,10 +322,13 @@ func wordflowLevelView(state *WordflowLevelState) game.GameView {
 
 	cellViews := make([]game.CellView, 0, len(positions))
 	for _, position := range positions {
+		found := foundCells[position]
+		hintRevealed := hinted[position] && !found
 		cell := game.CellView{
 			Row: position.Row, Col: position.Col,
-			Revealed: foundCells[position] || hinted[position],
-			Hinted:   hinted[position] && !foundCells[position],
+			Revealed: found || hintRevealed || state.TimedOut,
+			Hinted:   hintRevealed,
+			Missed:   state.TimedOut && !found && !hintRevealed,
 		}
 		if cell.Revealed {
 			cell.Letter = cells[position]
@@ -297,14 +343,24 @@ func wordflowLevelView(state *WordflowLevelState) game.GameView {
 		Attempts: state.Attempts, RejectedWords: append([]string(nil), state.RejectedWords...),
 		SpeedBonuses: speedBonusTiers(state.StartedAt, len(state.Puzzle.Words)),
 		HintBonus:    hintBonusFor(state), AccuracyBonus: accuracyBonusFor(state.IncorrectGuesses), Hints: state.Hints,
-		HintPrices: game.HintPrices{Letter: letterHintPointCost, Brush: brushHintPointCost, Word: wordHintPointCost},
-		Complete:   state.Complete, SpecialEvent: state.Puzzle.SpecialEvent,
+		HintPrices: state.Puzzle.EffectiveHintPrices(),
+		Complete:   state.Complete, TimedOut: state.TimedOut, ExpiresAt: wordflowLevelExpiresAt(state),
+		SpecialEvent: state.Puzzle.SpecialEvent,
 	}
 	if state.Complete {
 		completedAt := state.CompletedAt
 		view.CompletedAt = &completedAt
 		score := state.Score
 		view.Score = &score
+	}
+	if state.TimedOut {
+		view.SolutionWords = make([]game.SolutionWordView, 0, len(state.Puzzle.Words))
+		for _, word := range state.Puzzle.Words {
+			view.SolutionWords = append(view.SolutionWords, game.SolutionWordView{
+				Answer: word.Answer,
+				Found:  hasAnswer(state.FoundAnswers, word.Answer),
+			})
+		}
 	}
 	return view
 }
@@ -390,14 +446,15 @@ func freeHintCount(state *WordflowLevelState, hint game.HintType) int {
 	}
 }
 
-func hintPointCost(hint game.HintType) (int, error) {
+func hintPointCost(puzzle game.Puzzle, hint game.HintType) (int, error) {
+	prices := puzzle.EffectiveHintPrices()
 	switch hint {
 	case game.HintLetter:
-		return letterHintPointCost, nil
+		return prices.Letter, nil
 	case game.HintBrush:
-		return brushHintPointCost, nil
+		return prices.Brush, nil
 	case game.HintWord:
-		return wordHintPointCost, nil
+		return prices.Word, nil
 	default:
 		return 0, temporal.NewApplicationError("unknown hint type", "invalid_hint")
 	}
@@ -468,11 +525,35 @@ func positionFor(word game.PlacedWord, index int) game.Position {
 }
 
 func finishLevelIfSolved(state *WordflowLevelState, now time.Time) {
+	if state.TimedOut {
+		return
+	}
 	if len(state.FoundAnswers) == len(state.Puzzle.Words) {
 		state.Complete = true
 		state.CompletedAt = now
 		state.Score = calculateGameScore(state)
 	}
+}
+
+func finishLevelIfExpired(state *WordflowLevelState, now time.Time) bool {
+	if state.Complete || state.TimedOut {
+		return state.TimedOut
+	}
+	expiresAt := wordflowLevelExpiresAt(state)
+	if expiresAt == nil || now.Before(*expiresAt) {
+		return false
+	}
+	state.TimedOut = true
+	state.TimedOutAt = now
+	return true
+}
+
+func wordflowLevelExpiresAt(state *WordflowLevelState) *time.Time {
+	if state.Puzzle.TimeLimitSeconds <= 0 || state.StartedAt.IsZero() {
+		return nil
+	}
+	expiresAt := state.StartedAt.Add(time.Duration(state.Puzzle.TimeLimitSeconds) * time.Second)
+	return &expiresAt
 }
 
 func calculateGameScore(state *WordflowLevelState) game.GameScore {
@@ -484,7 +565,7 @@ func calculateGameScore(state *WordflowLevelState) game.GameScore {
 	speedBonus := speedBonusFor(duration, len(state.Puzzle.Words))
 	accuracyBonus := accuracyBonusFor(state.IncorrectGuesses)
 	hintBonus := hintBonusFor(state)
-	basePoints := 10
+	basePoints := state.Puzzle.EffectiveBasePoints()
 
 	return game.GameScore{
 		Points:           basePoints + speedBonus + accuracyBonus + hintBonus,

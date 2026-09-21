@@ -7,6 +7,8 @@ let completionAction;
 let noticeTimer;
 let speedBonusTimer;
 let campaignTimer;
+let levelDeadlineTimer;
+let deadlineRefresh;
 
 const elements = Object.fromEntries(
   [...document.querySelectorAll("[id]")].map((element) => [element.id, element]),
@@ -72,6 +74,7 @@ async function logOut() {
 function showAuthentication() {
   stopSpeedBonusTicker();
   stopCampaignTicker();
+  stopLevelDeadlineTicker();
   document.body.dataset.session = "anonymous";
   elements.startup.hidden = true;
   elements.auth.hidden = false;
@@ -86,6 +89,7 @@ function showAuthentication() {
 }
 
 function showCampaignLoadingScreen() {
+  stopLevelDeadlineTicker();
   elements.startup.hidden = true;
   elements.auth.hidden = true;
   elements.stats.hidden = true;
@@ -135,6 +139,7 @@ function renderPlayer() {
 async function showCatalog(initialCatalog) {
   stopSpeedBonusTicker();
   stopCampaignTicker();
+  stopLevelDeadlineTicker();
   currentGame = undefined;
   elements.stats.hidden = false;
   elements["point-shop"].hidden = false;
@@ -156,8 +161,98 @@ function renderCampaignLoading() {
 }
 
 function renderCatalog() {
-  elements.campaigns.replaceChildren(...catalog.campaigns.map(renderCampaign));
+  const daily = currentDailyChallenge(catalog.campaigns);
+  elements["daily-challenge-slot"].hidden = !daily;
+  elements["daily-challenge-slot"].replaceChildren(...(daily ? [renderDailyChallenge(daily)] : []));
+  elements.campaigns.replaceChildren(...catalog.campaigns
+    .filter((campaign) => campaign.kind !== "daily-challenge")
+    .map(renderCampaign));
   startCampaignTicker();
+}
+
+function currentDailyChallenge(campaigns) {
+  const daily = campaigns.filter((campaign) => campaign.kind === "daily-challenge");
+  return daily.find((campaign) => campaign.status === "active")
+    || daily.filter((campaign) => campaign.status === "upcoming")
+      .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt))[0];
+}
+
+function renderDailyChallenge(campaign) {
+  const terminal = campaign.failed || campaign.completedLevels === campaign.totalLevels;
+  const strip = document.createElement("section");
+  strip.className = `daily-strip${terminal ? " terminal" : ""}${campaign.failed ? " failed" : ""}`;
+
+  const mark = document.createElement("div");
+  mark.className = "daily-mark";
+  mark.setAttribute("aria-hidden", "true");
+  mark.textContent = terminal ? (campaign.failed ? "×" : "✓") : "✦";
+
+  const copy = document.createElement("div");
+  copy.className = "daily-copy";
+  const eyebrow = document.createElement("p");
+  eyebrow.className = "eyebrow";
+  eyebrow.textContent = terminal
+    ? (campaign.failed ? "Daily challenge ended" : "Daily challenge complete")
+    : "Daily Challenge";
+  const title = document.createElement("h3");
+  title.textContent = terminal
+    ? `${campaign.completedLevels} / ${campaign.totalLevels} levels completed`
+    : campaign.title;
+  const detail = document.createElement("p");
+  detail.className = "daily-detail";
+  if (terminal) {
+    detail.append("Returns in ", campaignCountdown(campaign.endsAt));
+  } else if (campaign.status === "upcoming") {
+    detail.append(`${campaign.totalLevels} expert levels · Starts in `, campaignCountdown(campaign.startsAt));
+  } else {
+    detail.append(`${campaign.totalLevels} expert levels · Hard time limits · `, campaignCountdown(campaign.endsAt), " left");
+  }
+  copy.append(eyebrow, title, detail);
+
+  const progress = document.createElement("div");
+  progress.className = "daily-progress";
+  progress.setAttribute("aria-label", `${campaign.completedLevels} of ${campaign.totalLevels} daily levels completed`);
+  progress.replaceChildren(...campaign.levels.map((level) => {
+    const node = document.createElement("span");
+    const displayStatus = levelDisplayStatus(campaign, level);
+    node.className = displayStatus;
+    node.textContent = level.level;
+    node.title = `Level ${level.level}: ${level.title} · ${displayStatus}`;
+    return node;
+  }));
+
+  const actions = document.createElement("div");
+  actions.className = "daily-actions";
+  const workflow = document.createElement("a");
+  workflow.className = "quiet workflow-link compact";
+  workflow.target = "_blank";
+  workflow.rel = "noopener";
+  workflow.textContent = "Workflow ↗";
+  workflow.href = campaign.workflowUrl;
+
+  const action = document.createElement("button");
+  const activeLevel = campaign.levels.find((level) => level.status === "active");
+  const availableLevel = campaign.levels.find((level) => level.status === "available");
+  if (terminal) {
+    action.className = "quiet";
+    action.textContent = campaign.failed ? "View solution" : "View result";
+    action.addEventListener("click", () => reviewDailyOutcome(campaign).catch(showError));
+  } else if (activeLevel) {
+    action.className = "primary";
+    action.textContent = `Resume level ${activeLevel.level}`;
+    action.addEventListener("click", () => resumeGame().catch(showError));
+  } else if (availableLevel) {
+    action.className = "primary";
+    action.textContent = campaign.completedLevels ? "Continue challenge" : "Play Daily Challenge!";
+    action.addEventListener("click", () => startGame(campaign.campaignId, availableLevel.level).catch(showError));
+  } else {
+    action.className = "quiet";
+    action.textContent = campaign.lockedReason || "Challenge unavailable";
+    action.disabled = true;
+  }
+  actions.append(workflow, action);
+  strip.append(mark, copy, progress, actions);
+  return strip;
 }
 
 function renderCampaign(campaign) {
@@ -200,7 +295,9 @@ function renderCampaign(campaign) {
   description.textContent = campaign.description;
   const progress = document.createElement("p");
   progress.className = "campaign-progress";
-  progress.textContent = `${campaign.completedLevels} / ${campaign.totalLevels} levels completed`;
+  progress.textContent = campaign.failed
+    ? `Attempt ended · ${campaign.completedLevels} / ${campaign.totalLevels} levels completed`
+    : `${campaign.completedLevels} / ${campaign.totalLevels} levels completed`;
 
   const levels = document.createElement("div");
   levels.className = "campaign-levels";
@@ -264,9 +361,9 @@ function campaignCountdown(at) {
 
 function startCampaignTicker() {
   stopCampaignTicker();
-  const lockedLevels = [...elements.campaigns.querySelectorAll("[data-locks-until]")];
-  const buttons = [...elements.campaigns.querySelectorAll("[data-unlocks-at]")];
-  const countdowns = [...elements.campaigns.querySelectorAll("[data-countdown-at]")];
+  const lockedLevels = [...elements.catalog.querySelectorAll("[data-locks-until]")];
+  const buttons = [...elements.catalog.querySelectorAll("[data-unlocks-at]")];
+  const countdowns = [...elements.catalog.querySelectorAll("[data-countdown-at]")];
   const tick = () => {
     let waiting = false;
     lockedLevels.forEach((level) => {
@@ -355,7 +452,18 @@ async function resumeGame(initialGame) {
   currentGame = initialGame || await api(`/api/me/campaigns/${active.campaignId}/levels/${active.level}`);
   completionRefresh = undefined;
   completionAction = undefined;
+  deadlineRefresh = undefined;
   loadWorkflowLink(elements["game-workflow"], `/api/me/campaigns/${active.campaignId}/levels/${active.level}/workflow-link`).catch(showError);
+  renderGame();
+}
+
+async function reviewDailyOutcome(campaign) {
+  const level = campaign.failed ? campaign.nextLevel : campaign.totalLevels;
+  currentGame = await api(`/api/me/campaigns/${campaign.campaignId}/levels/${level}`);
+  completionRefresh = undefined;
+  completionAction = undefined;
+  deadlineRefresh = undefined;
+  loadWorkflowLink(elements["game-workflow"], `/api/me/campaigns/${campaign.campaignId}/levels/${level}/workflow-link`).catch(showError);
   renderGame();
 }
 
@@ -370,7 +478,8 @@ function renderGame() {
   elements.catalog.hidden = true;
   elements.complete.hidden = true;
   elements.game.hidden = false;
-  elements["level-label"].textContent = `Level ${currentGame.level}`;
+  const daily = catalog?.campaigns?.find((campaign) => campaign.campaignId === currentGame.campaignId)?.kind === "daily-challenge";
+  elements["level-label"].textContent = `${daily ? "Daily Challenge · " : ""}Level ${currentGame.level}`;
   elements["level-title"].textContent = currentGame.title;
   elements.progress.textContent = `${currentGame.foundWords} / ${currentGame.totalWords} words resolved`;
   elements.event.hidden = !currentGame.specialEvent;
@@ -386,13 +495,71 @@ function renderGame() {
   elements["hint-bonus-points"].textContent = `+${currentGame.hintBonus} points`;
   elements["accuracy-bonus-points"].textContent = `+${currentGame.accuracyBonus} points`;
 
-  if (currentGame.complete) {
+  if (currentGame.timedOut) {
     stopSpeedBonusTicker();
+    stopLevelDeadlineTicker();
+    renderTimedOut(daily);
+    beginCompletionRefresh();
+  } else if (currentGame.complete) {
+    stopSpeedBonusTicker();
+    stopLevelDeadlineTicker();
     renderComplete();
     beginCompletionRefresh();
   } else {
     startSpeedBonusTicker();
+    startLevelDeadlineTicker();
   }
+}
+
+function startLevelDeadlineTicker() {
+  stopLevelDeadlineTicker();
+  if (!currentGame.expiresAt) {
+    elements["level-deadline"].hidden = true;
+    return;
+  }
+
+  elements["level-deadline"].hidden = false;
+  elements["level-deadline"].classList.remove("expired");
+  const tick = () => {
+    const secondsRemaining = Math.max(0, Math.ceil((Date.parse(currentGame.expiresAt) - Date.now()) / 1000));
+    elements["level-deadline"].textContent = secondsRemaining
+      ? `Hard limit · ${formatCountdown(secondsRemaining)}`
+      : "Time expired";
+    if (secondsRemaining) return;
+    elements["level-deadline"].classList.add("expired");
+    stopLevelDeadlineTicker();
+    refreshExpiredLevel();
+  };
+  tick();
+  if (Date.parse(currentGame.expiresAt) > Date.now()) {
+    levelDeadlineTimer = setInterval(tick, 250);
+  }
+}
+
+function stopLevelDeadlineTicker() {
+  clearInterval(levelDeadlineTimer);
+  levelDeadlineTimer = undefined;
+}
+
+function refreshExpiredLevel() {
+  if (deadlineRefresh) return;
+  const campaignId = currentGame.campaignId;
+  const level = currentGame.level;
+  deadlineRefresh = (async () => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const latest = await api(`/api/me/campaigns/${campaignId}/levels/${level}`);
+      if (latest.timedOut) {
+        if (currentGame?.campaignId === campaignId && currentGame?.level === level) {
+          currentGame = latest;
+          renderGame();
+        }
+        return;
+      }
+    }
+    throw new Error("The level timer expired, but its Workflow has not closed yet.");
+  })();
+  deadlineRefresh.catch(showError).finally(() => { deadlineRefresh = undefined; });
 }
 
 function startSpeedBonusTicker() {
@@ -453,14 +620,18 @@ function renderHintButton(hint, label, remaining, price) {
 }
 
 function renderCrossword() {
-  const maxRow = Math.max(...currentGame.cells.map((cell) => cell.row));
-  const maxCol = Math.max(...currentGame.cells.map((cell) => cell.col));
-  elements.crossword.style.setProperty("--grid-columns", maxCol + 1);
-  elements.crossword.style.gridTemplateRows = `repeat(${maxRow + 1}, auto)`;
-  elements.crossword.style.gridTemplateColumns = `repeat(${maxCol + 1}, auto)`;
-  elements.crossword.innerHTML = currentGame.cells.map((cell) => {
-    const state = cell.hinted ? "hinted" : cell.revealed ? "revealed" : "";
-    const label = cell.hinted ? "Hint-revealed letter" : cell.revealed ? "Found word letter" : "Hidden letter";
+  renderCrosswordInto(elements.crossword, currentGame.cells);
+}
+
+function renderCrosswordInto(element, cells) {
+  const maxRow = Math.max(...cells.map((cell) => cell.row));
+  const maxCol = Math.max(...cells.map((cell) => cell.col));
+  element.style.setProperty("--grid-columns", maxCol + 1);
+  element.style.gridTemplateRows = `repeat(${maxRow + 1}, auto)`;
+  element.style.gridTemplateColumns = `repeat(${maxCol + 1}, auto)`;
+  element.innerHTML = cells.map((cell) => {
+    const state = cell.missed ? "missed" : cell.hinted ? "hinted" : cell.revealed ? "revealed" : "";
+    const label = cell.missed ? "Missed solution letter" : cell.hinted ? "Hint-revealed letter" : cell.revealed ? "Found word letter" : "Hidden letter";
     return `<div class="cell ${state}" aria-label="${label}" style="grid-row:${cell.row + 1};grid-column:${cell.col + 1}">${cell.letter || ""}</div>`;
   }).join("");
 }
@@ -560,12 +731,36 @@ async function shuffle() {
 function renderComplete() {
   elements.game.hidden = true;
   elements.complete.hidden = false;
+  elements.complete.classList.remove("timed-out");
+  elements["complete-eyebrow"].textContent = "Workflow completed";
+  elements["complete-title"].textContent = "Execution succeeded.";
+  elements["timeout-solution"].hidden = true;
   const score = currentGame.score;
   elements["complete-summary"].textContent = score
     ? `Level ${currentGame.level} completed in ${formatDuration(score.durationSeconds)}. `
       + `Earned ${score.points} points: ${score.basePoints} win + ${score.speedBonus} speed + `
       + `${score.accuracyBonus} accuracy + ${score.hintBonus} hint bonus.`
     : `Level ${currentGame.level} completed after ${currentGame.attempts} word attempt(s).`;
+}
+
+function renderTimedOut(daily) {
+  elements.game.hidden = true;
+  elements.complete.hidden = false;
+  elements.complete.classList.add("timed-out");
+  elements["complete-eyebrow"].textContent = daily ? "Daily challenge ended" : "Level attempt ended";
+  elements["complete-title"].textContent = "Time expired.";
+  elements["complete-summary"].textContent = daily
+    ? `The hard time limit expired on level ${currentGame.level}. Today's attempt is now complete.`
+    : `The hard time limit expired on level ${currentGame.level}.`;
+  elements["timeout-solution"].hidden = false;
+  renderCrosswordInto(elements["timeout-crossword"], currentGame.cells);
+  elements["timeout-answers"].replaceChildren(...(currentGame.solutionWords || []).map((word) => {
+    const answer = document.createElement("li");
+    answer.className = word.found ? "found" : "missed";
+    answer.textContent = word.answer;
+    answer.title = word.found ? "Found before time expired" : "Missed before time expired";
+    return answer;
+  }));
 }
 
 function formatDuration(totalSeconds) {

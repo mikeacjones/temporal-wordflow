@@ -305,12 +305,14 @@ type activeGameResponse struct {
 
 type catalogCampaignResponse struct {
 	CampaignID      string               `json:"campaignId"`
+	Kind            campaign.Kind        `json:"kind,omitempty"`
 	Title           string               `json:"title"`
 	Description     string               `json:"description"`
 	Status          campaign.Status      `json:"status"`
 	StartsAt        *time.Time           `json:"startsAt,omitempty"`
 	EndsAt          *time.Time           `json:"endsAt,omitempty"`
 	LockedReason    string               `json:"lockedReason,omitempty"`
+	Failed          bool                 `json:"failed,omitempty"`
 	NextLevel       int                  `json:"nextLevel"`
 	CompletedLevels int                  `json:"completedLevels"`
 	TotalLevels     int                  `json:"totalLevels"`
@@ -323,23 +325,26 @@ type catalogResponse struct {
 }
 
 type gameResponse struct {
-	CampaignID    string                `json:"campaignId"`
-	Level         int                   `json:"level"`
-	Title         string                `json:"title"`
-	Letters       string                `json:"letters"`
-	Cells         []game.CellView       `json:"cells"`
-	FoundWords    int                   `json:"foundWords"`
-	TotalWords    int                   `json:"totalWords"`
-	Attempts      int                   `json:"attempts"`
-	RejectedWords []string              `json:"rejectedWords"`
-	SpeedBonuses  []game.SpeedBonusTier `json:"speedBonuses"`
-	HintBonus     int                   `json:"hintBonus"`
-	AccuracyBonus int                   `json:"accuracyBonus"`
-	Hints         game.HintInventory    `json:"hints"`
-	HintPrices    game.HintPrices       `json:"hintPrices"`
-	Complete      bool                  `json:"complete"`
-	SpecialEvent  *game.SpecialEvent    `json:"specialEvent,omitempty"`
-	Score         *gameScoreResponse    `json:"score,omitempty"`
+	CampaignID    string                  `json:"campaignId"`
+	Level         int                     `json:"level"`
+	Title         string                  `json:"title"`
+	Letters       string                  `json:"letters"`
+	Cells         []game.CellView         `json:"cells"`
+	FoundWords    int                     `json:"foundWords"`
+	TotalWords    int                     `json:"totalWords"`
+	Attempts      int                     `json:"attempts"`
+	RejectedWords []string                `json:"rejectedWords"`
+	SpeedBonuses  []game.SpeedBonusTier   `json:"speedBonuses"`
+	HintBonus     int                     `json:"hintBonus"`
+	AccuracyBonus int                     `json:"accuracyBonus"`
+	Hints         game.HintInventory      `json:"hints"`
+	HintPrices    game.HintPrices         `json:"hintPrices"`
+	Complete      bool                    `json:"complete"`
+	TimedOut      bool                    `json:"timedOut,omitempty"`
+	ExpiresAt     *time.Time              `json:"expiresAt,omitempty"`
+	SpecialEvent  *game.SpecialEvent      `json:"specialEvent,omitempty"`
+	Score         *gameScoreResponse      `json:"score,omitempty"`
+	SolutionWords []game.SolutionWordView `json:"solutionWords,omitempty"`
 }
 
 type gameScoreResponse struct {
@@ -676,8 +681,8 @@ func newPlayerResponse(player game.PlayerView) playerResponse {
 
 func newCatalogCampaignResponse(view campaign.View, workflowURL string) catalogCampaignResponse {
 	return catalogCampaignResponse{
-		CampaignID: view.CampaignID, Title: view.Title, Description: view.Description, Status: view.Status,
-		StartsAt: view.StartsAt, EndsAt: view.EndsAt, LockedReason: view.LockedReason,
+		CampaignID: view.CampaignID, Kind: view.Kind, Title: view.Title, Description: view.Description, Status: view.Status,
+		StartsAt: view.StartsAt, EndsAt: view.EndsAt, LockedReason: view.LockedReason, Failed: view.Failed,
 		NextLevel: view.NextLevel, CompletedLevels: view.CompletedLevels, TotalLevels: view.TotalLevels,
 		Levels: view.Levels, WorkflowURL: workflowURL,
 	}
@@ -689,7 +694,9 @@ func newGameResponse(view game.GameView) gameResponse {
 		Cells: view.Cells, FoundWords: view.FoundWords, TotalWords: view.TotalWords, Attempts: view.Attempts,
 		RejectedWords: view.RejectedWords, SpeedBonuses: view.SpeedBonuses,
 		HintBonus: view.HintBonus, AccuracyBonus: view.AccuracyBonus,
-		Hints: view.Hints, HintPrices: view.HintPrices, Complete: view.Complete, SpecialEvent: view.SpecialEvent,
+		Hints: view.Hints, HintPrices: view.HintPrices, Complete: view.Complete,
+		TimedOut: view.TimedOut, ExpiresAt: view.ExpiresAt, SpecialEvent: view.SpecialEvent,
+		SolutionWords: view.SolutionWords,
 	}
 	if view.Score != nil {
 		response.Score = &gameScoreResponse{

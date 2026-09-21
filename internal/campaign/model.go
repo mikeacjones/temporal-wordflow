@@ -4,6 +4,10 @@ import "time"
 
 const GameWordflow = "wordflow"
 
+type Kind string
+
+const KindDailyChallenge Kind = "daily-challenge"
+
 type Status string
 
 const (
@@ -56,18 +60,21 @@ type UnlockPolicy struct {
 }
 
 type Definition struct {
-	ID           string       `json:"id"`
-	Game         GameSummary  `json:"game"`
-	Title        string       `json:"title"`
-	Description  string       `json:"description"`
-	StartsAt     *time.Time   `json:"startsAt,omitempty"`
-	EndsAt       *time.Time   `json:"endsAt,omitempty"`
-	Requirements Requirements `json:"requirements"`
-	Unlock       UnlockPolicy `json:"unlock"`
+	ID            string       `json:"id"`
+	Kind          Kind         `json:"kind,omitempty"`
+	SingleAttempt bool         `json:"singleAttempt,omitempty"`
+	Game          GameSummary  `json:"game"`
+	Title         string       `json:"title"`
+	Description   string       `json:"description"`
+	StartsAt      *time.Time   `json:"startsAt,omitempty"`
+	EndsAt        *time.Time   `json:"endsAt,omitempty"`
+	Requirements  Requirements `json:"requirements"`
+	Unlock        UnlockPolicy `json:"unlock"`
 }
 
 type Summary struct {
 	CampaignID  string      `json:"campaignId"`
+	Kind        Kind        `json:"kind,omitempty"`
 	WorkflowID  string      `json:"workflowId"`
 	Game        GameSummary `json:"game"`
 	Title       string      `json:"title"`
@@ -84,6 +91,7 @@ type PlayerCampaignProgress struct {
 	NextLevel       int       `json:"nextLevel"`
 	TotalLevels     int       `json:"totalLevels"`
 	Completed       bool      `json:"completed"`
+	Failed          bool      `json:"failed,omitempty"`
 	CompletedLevels int       `json:"completedLevels"`
 }
 
@@ -106,6 +114,7 @@ type LevelView struct {
 
 type View struct {
 	CampaignID      string      `json:"campaignId"`
+	Kind            Kind        `json:"kind,omitempty"`
 	WorkflowID      string      `json:"workflowId"`
 	Game            GameSummary `json:"game"`
 	Title           string      `json:"title"`
@@ -114,6 +123,7 @@ type View struct {
 	StartsAt        *time.Time  `json:"startsAt,omitempty"`
 	EndsAt          *time.Time  `json:"endsAt,omitempty"`
 	Eligible        bool        `json:"eligible"`
+	Failed          bool        `json:"failed,omitempty"`
 	LockedReason    string      `json:"lockedReason,omitempty"`
 	NextLevel       int         `json:"nextLevel"`
 	CompletedLevels int         `json:"completedLevels"`
@@ -133,5 +143,6 @@ type LevelResult struct {
 	Level       int          `json:"level"`
 	Attempts    int          `json:"attempts"`
 	CompletedAt time.Time    `json:"completedAt"`
+	TimedOut    bool         `json:"timedOut,omitempty"`
 	Awards      []PointAward `json:"awards"`
 }

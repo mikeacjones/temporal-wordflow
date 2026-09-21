@@ -24,7 +24,7 @@ on first registration and used by the leaderboard.
 | `CatalogWorkflow` | Registered games and references to their campaign Workflows | Singleton entity; Continue-As-New keeps history bounded |
 | `WordflowCampaignWorkflow` | One campaign's levels, unlock schedule, prerequisites, availability dates, and expiration timer | One long-lived entity per campaign |
 | `PlayerWorkflow` | Password hash, display name, campaign progress, points, rewards, streaks, and the active level reference | Long-lived entity; Continue-As-New keeps history bounded |
-| `WordflowLevelWorkflow` | One player's level answers, guesses, revealed cells, shuffles, hints, timing, scoring, and completion | Runs until the level is solved; can Continue-As-New after heavy use |
+| `WordflowLevelWorkflow` | One player's level answers, guesses, revealed cells, shuffles, hints, timing, scoring, and completion | Runs until the level is solved or its hard limit expires; can Continue-As-New after heavy use |
 | `LeaderboardWorkflow` | The top 100 absolute lifetime-point snapshots | Singleton entity; Continue-As-New keeps history bounded |
 | HTTP API | Nothing durable; verifies signed session JWTs and translates HTTP requests into Updates and Queries | Stateless |
 | Browser | Only the HTTP-only session JWT and letters currently selected on screen | Local session convenience |
@@ -97,6 +97,14 @@ Workflows while reusing the small Catalog registration, campaign view, player
 progress, and level-result contracts; the game-specific path remains explicit
 instead of hiding behavior behind a generic payload layer.
 
+The repository also includes a small manual campaign starter. It parses the
+same compact level format as the permanent campaign, builds the crossword
+layouts, and starts the durable campaign entity:
+
+```bash
+go run ./cmd/campaign -file campaigns/daily-challenge-2026-09-21.json
+```
+
 ## Implemented game rules
 
 - The default `Temporal Foundations` campaign never expires.
@@ -110,6 +118,10 @@ instead of hiding behavior behind a generic payload layer.
   it completes.
 - An ended campaign rejects new level starts; a level started before the end may
   finish.
+- A daily challenge is a dated, single-attempt campaign with three immediately
+  unlocked but sequential levels. Its levels can configure a hard time limit,
+  higher base score, and higher paid-hint prices. Timing out clears the active
+  game and permanently closes that player's attempt for the dated campaign.
 - Words that can be made from the letter queue but are not in the puzzle remain
   in durable, newest-first game history beside the board.
 - Completing at least one level on a Toronto calendar day maintains the daily
@@ -121,6 +133,8 @@ instead of hiding behavior behind a generic payload layer.
   then reaches zero after three minutes. The in-game panel shows the live
   Workflow-derived speed, hint, and accuracy bonuses. A win always awards at
   least 10 points.
+- Campaign levels may override the 10-point base score and the default hint
+  prices without changing the shared level Workflow.
 - Spendable points can be used for hints and streak freezes. Lifetime points
   track every earned game, milestone, and event point without decreasing when
   points are spent.

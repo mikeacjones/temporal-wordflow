@@ -1,0 +1,46 @@
+{
+  "id": "daily-challenge-2026-09-21",
+  "kind": "daily-challenge",
+  "singleAttempt": true,
+  "title": "Daily Challenge · September 21",
+  "description": "Three expert Wordflows. Each level has a three-minute hard limit, richer rewards, and premium hint prices. You get one attempt today.",
+  "game": {
+    "id": "wordflow",
+    "title": "Wordflow",
+    "description": "Resolve connected words from a shared letter queue."
+  },
+  "startsAt": "2026-09-21T00:00:00-04:00",
+  "endsAt": "2026-09-22T00:00:00-04:00",
+  "unlock": {
+    "initialLevels": 3,
+    "levelsPerInterval": 0,
+    "intervalHours": 0
+  },
+  "requirements": {},
+  "levels": [
+    {
+      "letters": "ACIITTVY",
+      "words": ["ACTIVITY", "CITY", "TACT", "IVY", "ACT", "CAT", "VAT", "VIA", "TIC", "ICY"],
+      "title": "Activity Pressure",
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    },
+    {
+      "letters": "CDEILORU",
+      "words": ["CLOUDIER", "CLOUD", "COULD", "CRUDE", "CURED", "LURED", "IDLE", "RIDE", "RULE", "LOUD"],
+      "title": "Cloud Scramble",
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    },
+    {
+      "letters": "ABCKLLOR",
+      "words": ["ROLLBACK", "ROLL", "BACK", "BALL", "CALL", "ROCK", "LACK", "LOCK", "ORCA", "CAB"],
+      "title": "Rollback Rush",
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    }
+  ]
+}

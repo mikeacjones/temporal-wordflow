@@ -41,6 +41,34 @@ func TestPalmSpringsCampaignIsValid(t *testing.T) {
 	validateCampaignLevels(t, configured.Levels, progressiveWordCount)
 }
 
+func TestDailyChallengeCampaignIsValid(t *testing.T) {
+	contents, err := os.ReadFile("../../campaigns/daily-challenge-2026-09-21.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured, err := ParseWordflowCampaign(contents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.Definition.ID != "daily-challenge-2026-09-21" || len(configured.Levels) != 3 {
+		t.Fatalf("unexpected campaign: %q with %d levels", configured.Definition.ID, len(configured.Levels))
+	}
+	if configured.Definition.Kind != "daily-challenge" || !configured.Definition.SingleAttempt {
+		t.Fatal("daily challenge must be typed and limited to one attempt")
+	}
+	for _, puzzle := range configured.Levels {
+		if len(puzzle.Words) != 10 || len([]rune(puzzle.Letters)) != game.MaxWordflowLetters {
+			t.Fatalf("level %d is not an expert puzzle", puzzle.Level)
+		}
+		if puzzle.TimeLimitSeconds != 180 || puzzle.EffectiveBasePoints() != 20 {
+			t.Fatalf("level %d has incorrect daily gameplay settings", puzzle.Level)
+		}
+		if puzzle.EffectiveHintPrices() != (game.HintPrices{Letter: 15, Brush: 30, Word: 45}) {
+			t.Fatalf("level %d has incorrect hint prices", puzzle.Level)
+		}
+	}
+}
+
 func progressiveWordCount(index int) int {
 	switch {
 	case index < 2:

@@ -13,6 +13,9 @@ type LevelDefinition struct {
 	SpecialEvent        *SpecialEvent `json:"specialEvent,omitempty"`
 	CompletionBonus     int           `json:"completionBonus,omitempty"`
 	CompletionBonusName string        `json:"completionBonusName,omitempty"`
+	TimeLimitSeconds    int           `json:"timeLimitSeconds,omitempty"`
+	BasePoints          int           `json:"basePoints,omitempty"`
+	HintPrices          HintPrices    `json:"hintPrices,omitempty"`
 }
 
 func BuildPuzzle(level int, definition LevelDefinition) (Puzzle, error) {
@@ -37,6 +40,9 @@ func BuildPuzzle(level int, definition LevelDefinition) (Puzzle, error) {
 		SpecialEvent:        definition.SpecialEvent,
 		CompletionBonus:     definition.CompletionBonus,
 		CompletionBonusName: definition.CompletionBonusName,
+		TimeLimitSeconds:    definition.TimeLimitSeconds,
+		BasePoints:          definition.BasePoints,
+		HintPrices:          definition.HintPrices,
 	}, nil
 }
 

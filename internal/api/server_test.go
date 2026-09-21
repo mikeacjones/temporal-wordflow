@@ -127,6 +127,7 @@ func TestPlayerResponseContainsOnlyBrowserFields(t *testing.T) {
 func TestCampaignResponseOmitsWorkflowOnlyFields(t *testing.T) {
 	response := newCatalogCampaignResponse(campaign.View{
 		CampaignID: "campaign", WorkflowID: "campaign/workflow",
+		Kind: campaign.KindDailyChallenge, Failed: true,
 		Game: campaign.GameSummary{ID: "wordflow"}, Title: "Campaign", Eligible: true,
 	}, "https://example.test/workflow")
 	payload := jsonObject(t, response)
@@ -135,14 +136,18 @@ func TestCampaignResponseOmitsWorkflowOnlyFields(t *testing.T) {
 			t.Fatalf("campaign response unexpectedly contains %q", field)
 		}
 	}
+	require.NotNil(t, payload["kind"])
+	require.NotNil(t, payload["failed"])
 }
 
 func TestGameResponseOmitsWorkflowStateNotRenderedByBrowser(t *testing.T) {
 	completedAt := time.Now()
+	expiresAt := completedAt.Add(time.Minute)
 	response := newGameResponse(game.GameView{
 		WorkflowID: "level/workflow", PlayerID: "alice", CampaignID: "campaign", Level: 1,
-		Words: []game.WordView{{Length: 4}}, CompletedAt: &completedAt,
-		Score: &game.GameScore{Points: 10, IncorrectGuesses: 3, HintsUsed: 2},
+		Words: []game.WordView{{Length: 4}}, CompletedAt: &completedAt, TimedOut: true, ExpiresAt: &expiresAt,
+		SolutionWords: []game.SolutionWordView{{Answer: "FLOW", Found: false}},
+		Score:         &game.GameScore{Points: 10, IncorrectGuesses: 3, HintsUsed: 2},
 	})
 	payload := jsonObject(t, response)
 	for _, field := range []string{"workflowId", "playerId", "words", "completedAt"} {
@@ -150,6 +155,9 @@ func TestGameResponseOmitsWorkflowStateNotRenderedByBrowser(t *testing.T) {
 			t.Fatalf("game response unexpectedly contains %q", field)
 		}
 	}
+	require.NotNil(t, payload["timedOut"])
+	require.NotNil(t, payload["expiresAt"])
+	require.NotNil(t, payload["solutionWords"])
 	var score map[string]json.RawMessage
 	if err := json.Unmarshal(payload["score"], &score); err != nil {
 		t.Fatal(err)

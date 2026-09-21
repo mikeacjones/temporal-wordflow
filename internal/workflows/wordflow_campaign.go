@@ -108,6 +108,14 @@ func validateWordflowCampaignLevels(levels []game.Puzzle) error {
 				nil,
 			)
 		}
+		if puzzle.TimeLimitSeconds < 0 || puzzle.BasePoints < 0 ||
+			puzzle.HintPrices.Letter < 0 || puzzle.HintPrices.Brush < 0 || puzzle.HintPrices.Word < 0 {
+			return temporal.NewNonRetryableApplicationError(
+				fmt.Sprintf("level %d has invalid gameplay settings", puzzle.Level),
+				"invalid_campaign",
+				nil,
+			)
+		}
 	}
 	return nil
 }
@@ -115,6 +123,7 @@ func validateWordflowCampaignLevels(levels []game.Puzzle) error {
 func wordflowCampaignSummary(ctx workflow.Context, state *WordflowCampaignState) campaign.Summary {
 	return campaign.Summary{
 		CampaignID:  state.Definition.ID,
+		Kind:        state.Definition.Kind,
 		WorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
 		Game:        state.Definition.Game,
 		Title:       state.Definition.Title,
@@ -133,10 +142,12 @@ func wordflowCampaignView(ctx workflow.Context, state *WordflowCampaignState, pl
 	joinedAt := now
 	nextLevel := 1
 	completedLevels := 0
+	failed := false
 	if progress != nil {
 		joinedAt = progress.JoinedAt
 		nextLevel = progress.NextLevel
 		completedLevels = progress.CompletedLevels
+		failed = progress.Failed
 	}
 
 	eligible, reason := campaignEligibility(state.Definition, player, summary.Status)
@@ -165,10 +176,10 @@ func wordflowCampaignView(ctx workflow.Context, state *WordflowCampaignState, pl
 	}
 
 	return campaign.View{
-		CampaignID: state.Definition.ID, WorkflowID: summary.WorkflowID,
+		CampaignID: state.Definition.ID, Kind: state.Definition.Kind, WorkflowID: summary.WorkflowID,
 		Game: state.Definition.Game, Title: state.Definition.Title, Description: state.Definition.Description,
 		Status: summary.Status, StartsAt: state.Definition.StartsAt, EndsAt: state.Definition.EndsAt,
-		Eligible: eligible, LockedReason: reason, NextLevel: nextLevel,
+		Eligible: eligible, Failed: failed, LockedReason: reason, NextLevel: nextLevel,
 		CompletedLevels: completedLevels, TotalLevels: len(state.Levels), Levels: levels,
 	}
 }
@@ -215,6 +226,9 @@ func campaignEligibility(definition campaign.Definition, player campaign.PlayerP
 		return false, "This campaign has not started yet."
 	case campaign.StatusEnded:
 		return false, "This campaign has ended."
+	}
+	if progress := findPlayerCampaign(player.Campaigns, definition.ID); definition.SingleAttempt && progress != nil && progress.Failed {
+		return false, "Today's daily challenge attempt is over."
 	}
 	for _, requiredCampaign := range definition.Requirements.Campaigns {
 		progress := findPlayerCampaign(player.Campaigns, requiredCampaign)

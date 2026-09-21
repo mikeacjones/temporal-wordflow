@@ -36,7 +36,8 @@ func TestWordflowCampaignExposesTheCommonCampaignQueries(t *testing.T) {
 		{Level: 4, Title: "Four"},
 	}
 	definition := campaign.Definition{
-		ID: "test", Game: campaign.GameSummary{ID: campaign.GameWordflow, Title: "Wordflow"},
+		ID: "test", Kind: campaign.KindDailyChallenge,
+		Game:   campaign.GameSummary{ID: campaign.GameWordflow, Title: "Wordflow"},
 		Title:  "Test campaign",
 		Unlock: campaign.UnlockPolicy{InitialLevels: 3, LevelsPerInterval: 1, Interval: 24 * time.Hour},
 	}
@@ -65,6 +66,8 @@ func TestWordflowCampaignExposesTheCommonCampaignQueries(t *testing.T) {
 	})
 
 	require.Equal(t, "test", summary.CampaignID)
+	require.Equal(t, campaign.KindDailyChallenge, summary.Kind)
+	require.Equal(t, campaign.KindDailyChallenge, view.Kind)
 	require.Equal(t, campaign.StatusActive, summary.Status)
 	require.Equal(t, campaign.LevelAvailable, view.Levels[0].Status)
 	require.Equal(t, campaign.LevelUnlocked, view.Levels[1].Status)
@@ -96,6 +99,17 @@ func TestCampaignRequirementsAndEnrollmentUnlockSchedule(t *testing.T) {
 	require.Equal(t, 3, unlockedWordflowLevels(policy, now, now.Add(23*time.Hour), 30))
 	require.Equal(t, 6, unlockedWordflowLevels(policy, now, now.Add(24*time.Hour), 30))
 	require.Equal(t, 30, unlockedWordflowLevels(policy, now, now.Add(30*24*time.Hour), 30))
+}
+
+func TestSingleAttemptCampaignLocksAfterTimeout(t *testing.T) {
+	definition := campaign.Definition{ID: "daily", SingleAttempt: true}
+	player := campaign.PlayerProgress{Campaigns: []campaign.PlayerCampaignProgress{{
+		CampaignID: "daily", NextLevel: 2, CompletedLevels: 1, Failed: true,
+	}}}
+
+	eligible, reason := campaignEligibility(definition, player, campaign.StatusActive)
+	require.False(t, eligible)
+	require.Equal(t, "Today's daily challenge attempt is over.", reason)
 }
 
 func TestCampaignStatusUsesConfiguredWindow(t *testing.T) {

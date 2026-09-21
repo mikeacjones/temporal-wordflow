@@ -19,6 +19,13 @@ type Direction string
 const MaxWordflowLetters = 8
 
 const (
+	DefaultBasePoints          = 10
+	DefaultLetterHintPointCost = 10
+	DefaultBrushHintPointCost  = 20
+	DefaultWordHintPointCost   = 30
+)
+
+const (
 	Across Direction = "across"
 	Down   Direction = "down"
 )
@@ -62,6 +69,30 @@ type Puzzle struct {
 	SpecialEvent        *SpecialEvent `json:"specialEvent,omitempty"`
 	CompletionBonus     int           `json:"completionBonus,omitempty"`
 	CompletionBonusName string        `json:"completionBonusName,omitempty"`
+	TimeLimitSeconds    int           `json:"timeLimitSeconds,omitempty"`
+	BasePoints          int           `json:"basePoints,omitempty"`
+	HintPrices          HintPrices    `json:"hintPrices,omitempty"`
+}
+
+func (p Puzzle) EffectiveBasePoints() int {
+	if p.BasePoints > 0 {
+		return p.BasePoints
+	}
+	return DefaultBasePoints
+}
+
+func (p Puzzle) EffectiveHintPrices() HintPrices {
+	prices := p.HintPrices
+	if prices.Letter <= 0 {
+		prices.Letter = DefaultLetterHintPointCost
+	}
+	if prices.Brush <= 0 {
+		prices.Brush = DefaultBrushHintPointCost
+	}
+	if prices.Word <= 0 {
+		prices.Word = DefaultWordHintPointCost
+	}
+	return prices
 }
 
 type CellView struct {
@@ -70,6 +101,12 @@ type CellView struct {
 	Letter   string `json:"letter,omitempty"`
 	Revealed bool   `json:"revealed"`
 	Hinted   bool   `json:"hinted"`
+	Missed   bool   `json:"missed,omitempty"`
+}
+
+type SolutionWordView struct {
+	Answer string `json:"answer"`
+	Found  bool   `json:"found"`
 }
 
 type WordView struct {
@@ -87,27 +124,30 @@ type SpeedBonusTier struct {
 }
 
 type GameView struct {
-	WorkflowID    string           `json:"workflowId"`
-	PlayerID      string           `json:"playerId"`
-	CampaignID    string           `json:"campaignId"`
-	Level         int              `json:"level"`
-	Title         string           `json:"title"`
-	Letters       string           `json:"letters"`
-	Cells         []CellView       `json:"cells"`
-	Words         []WordView       `json:"words"`
-	FoundWords    int              `json:"foundWords"`
-	TotalWords    int              `json:"totalWords"`
-	Attempts      int              `json:"attempts"`
-	RejectedWords []string         `json:"rejectedWords"`
-	SpeedBonuses  []SpeedBonusTier `json:"speedBonuses"`
-	HintBonus     int              `json:"hintBonus"`
-	AccuracyBonus int              `json:"accuracyBonus"`
-	Hints         HintInventory    `json:"hints"`
-	HintPrices    HintPrices       `json:"hintPrices"`
-	Complete      bool             `json:"complete"`
-	SpecialEvent  *SpecialEvent    `json:"specialEvent,omitempty"`
-	CompletedAt   *time.Time       `json:"completedAt,omitempty"`
-	Score         *GameScore       `json:"score,omitempty"`
+	WorkflowID    string             `json:"workflowId"`
+	PlayerID      string             `json:"playerId"`
+	CampaignID    string             `json:"campaignId"`
+	Level         int                `json:"level"`
+	Title         string             `json:"title"`
+	Letters       string             `json:"letters"`
+	Cells         []CellView         `json:"cells"`
+	Words         []WordView         `json:"words"`
+	FoundWords    int                `json:"foundWords"`
+	TotalWords    int                `json:"totalWords"`
+	Attempts      int                `json:"attempts"`
+	RejectedWords []string           `json:"rejectedWords"`
+	SpeedBonuses  []SpeedBonusTier   `json:"speedBonuses"`
+	HintBonus     int                `json:"hintBonus"`
+	AccuracyBonus int                `json:"accuracyBonus"`
+	Hints         HintInventory      `json:"hints"`
+	HintPrices    HintPrices         `json:"hintPrices"`
+	Complete      bool               `json:"complete"`
+	TimedOut      bool               `json:"timedOut,omitempty"`
+	ExpiresAt     *time.Time         `json:"expiresAt,omitempty"`
+	SpecialEvent  *SpecialEvent      `json:"specialEvent,omitempty"`
+	CompletedAt   *time.Time         `json:"completedAt,omitempty"`
+	Score         *GameScore         `json:"score,omitempty"`
+	SolutionWords []SolutionWordView `json:"solutionWords,omitempty"`
 }
 
 type GameScore struct {
