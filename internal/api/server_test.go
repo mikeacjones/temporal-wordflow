@@ -16,3 +16,18 @@ func TestWorkflowUIURL(t *testing.T) {
 		t.Fatalf("workflowUIURL() = %q, want %q", got, want)
 	}
 }
+
+func TestWorkflowUIURLWithoutRunID(t *testing.T) {
+	t.Parallel()
+
+	got := workflowUIURL(
+		"https://cloud.temporal.io/",
+		"wordflow.a1b2c",
+		"wordflow-campaign/temporal-foundations",
+		"",
+	)
+	want := "https://cloud.temporal.io/namespaces/wordflow.a1b2c/workflows/wordflow-campaign%2Ftemporal-foundations"
+	if got != want {
+		t.Fatalf("workflowUIURL() = %q, want %q", got, want)
+	}
+}

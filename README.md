@@ -130,14 +130,13 @@ instead of hiding behavior behind a generic payload layer.
 ## Continue-As-New and deployments
 
 Each mutable workflow carries its complete state in one serializable structure.
-Catalog, Player, Level, and Leaderboard Workflows Continue-As-New after 250
-mutations, when Temporal recommends it, or when a new target Worker Deployment
-Version is available. A level can Continue-As-New while it is active. The player
-does not Continue-As-New while it has an active level child; it waits for the
-child result while remaining responsive to Updates. Before continuing, each
-workflow waits for its Update handlers to finish. Campaign definitions are
-immutable after start, so campaign Workflows stay open with only their optional
-expiration timer and queries.
+Catalog, Player, Level, and Leaderboard Workflows Continue-As-New when Temporal
+recommends it or when a new target Worker Deployment Version is available. A
+level can Continue-As-New while it is active. The player does not Continue-As-New
+while it has an active level child; it waits for the child result while remaining
+responsive to Updates. Before continuing, each workflow waits for its Update
+handlers to finish. Campaign definitions are immutable after start, so campaign
+Workflows stay open with only their optional expiration timer and queries.
 
 Lambda workflows are registered as `Pinned`. At a Continue-As-New boundary,
 the new run opts into the target Worker Deployment Version when one is

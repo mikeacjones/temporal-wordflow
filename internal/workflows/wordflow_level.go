@@ -22,27 +22,25 @@ type WordflowLevelWorkflowInput struct {
 
 // WordflowLevelState is the complete Continue-As-New checkpoint for one level.
 type WordflowLevelState struct {
-	WorkflowID          string             `json:"workflowId"`
-	PlayerID            string             `json:"playerId"`
-	CampaignID          string             `json:"campaignId"`
-	Puzzle              game.Puzzle        `json:"puzzle"`
-	StartedAt           time.Time          `json:"startedAt"`
-	Letters             string             `json:"letters"`
-	FoundAnswers        []string           `json:"foundAnswers"`
-	RejectedWords       []string           `json:"rejectedWords"`
-	RevealedCells       []game.Position    `json:"revealedCells"`
-	Attempts            int                `json:"attempts"`
-	IncorrectGuesses    int                `json:"incorrectGuesses"`
-	LetterHintsUsed     int                `json:"letterHintsUsed"`
-	BrushHintsUsed      int                `json:"brushHintsUsed"`
-	WordHintsUsed       int                `json:"wordHintsUsed"`
-	Hints               game.HintInventory `json:"hints"`
-	Complete            bool               `json:"complete"`
-	CompletedAt         time.Time          `json:"completedAt"`
-	Score               game.GameScore     `json:"score"`
-	ShuffleCount        int                `json:"shuffleCount"`
-	EventsSinceContinue int                `json:"eventsSinceContinue"`
-	ContinueAfterEvents int                `json:"continueAfterEvents"`
+	WorkflowID       string             `json:"workflowId"`
+	PlayerID         string             `json:"playerId"`
+	CampaignID       string             `json:"campaignId"`
+	Puzzle           game.Puzzle        `json:"puzzle"`
+	StartedAt        time.Time          `json:"startedAt"`
+	Letters          string             `json:"letters"`
+	FoundAnswers     []string           `json:"foundAnswers"`
+	RejectedWords    []string           `json:"rejectedWords"`
+	RevealedCells    []game.Position    `json:"revealedCells"`
+	Attempts         int                `json:"attempts"`
+	IncorrectGuesses int                `json:"incorrectGuesses"`
+	LetterHintsUsed  int                `json:"letterHintsUsed"`
+	BrushHintsUsed   int                `json:"brushHintsUsed"`
+	WordHintsUsed    int                `json:"wordHintsUsed"`
+	Hints            game.HintInventory `json:"hints"`
+	Complete         bool               `json:"complete"`
+	CompletedAt      time.Time          `json:"completedAt"`
+	Score            game.GameScore     `json:"score"`
+	ShuffleCount     int                `json:"shuffleCount"`
 }
 
 type SubmitGuessInput struct {
@@ -108,7 +106,7 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 		}
 
 		finishLevelIfSolved(state, workflow.Now(updateCtx))
-		recordWordflowLevelMutation(state, changed)
+		changed.SendAsync(true)
 		return game.GuessResult{Outcome: outcome, Game: wordflowLevelView(state)}, nil
 	}); err != nil {
 		return campaign.LevelResult{}, err
@@ -160,7 +158,7 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 		}
 		recordHintUse(state, update.Hint)
 		finishLevelIfSolved(state, workflow.Now(updateCtx))
-		recordWordflowLevelMutation(state, changed)
+		changed.SendAsync(true)
 		return game.HintResult{
 			Outcome: outcome, Game: wordflowLevelView(state),
 			PointsSpent: pointsSpent, PointsRemaining: pointsRemaining,
@@ -180,7 +178,7 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 
 		state.ShuffleCount++
 		state.Letters = shuffleLetters(state.Puzzle.Letters, state.ShuffleCount)
-		recordWordflowLevelMutation(state, changed)
+		changed.SendAsync(true)
 		return wordflowLevelView(state), nil
 	}); err != nil {
 		return campaign.LevelResult{}, err
@@ -189,11 +187,10 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 	for !state.Complete {
 		var ignored bool
 		changed.Receive(ctx, &ignored)
-		if shouldContinueWordflowLevel(ctx, state) {
+		if shouldContinueWordflowLevel(ctx) {
 			if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 				return campaign.LevelResult{}, err
 			}
-			state.EventsSinceContinue = 0
 			return campaign.LevelResult{}, continueWordflowLevelAsNew(ctx, state)
 		}
 	}
@@ -228,22 +225,18 @@ func initialWordflowLevelState(ctx workflow.Context, input WordflowLevelWorkflow
 		if state.StartedAt.IsZero() {
 			state.StartedAt = workflow.Now(ctx)
 		}
-		if state.ContinueAfterEvents == 0 {
-			state.ContinueAfterEvents = defaultContinueAfterEvents
-		}
 		return state
 	}
 
 	now := workflow.Now(ctx)
 	return &WordflowLevelState{
-		WorkflowID:          workflow.GetInfo(ctx).WorkflowExecution.ID,
-		PlayerID:            input.PlayerID,
-		CampaignID:          input.CampaignID,
-		Puzzle:              input.Puzzle,
-		StartedAt:           now,
-		Letters:             input.Puzzle.Letters,
-		Hints:               game.HintInventory{Letters: 2, Brushes: 1, Words: 1},
-		ContinueAfterEvents: defaultContinueAfterEvents,
+		WorkflowID: workflow.GetInfo(ctx).WorkflowExecution.ID,
+		PlayerID:   input.PlayerID,
+		CampaignID: input.CampaignID,
+		Puzzle:     input.Puzzle,
+		StartedAt:  now,
+		Letters:    input.Puzzle.Letters,
+		Hints:      game.HintInventory{Letters: 2, Brushes: 1, Words: 1},
 	}
 }
 
@@ -596,14 +589,8 @@ func shuffleLetters(letters string, count int) string {
 	return string(runes)
 }
 
-func recordWordflowLevelMutation(state *WordflowLevelState, changed workflow.SendChannel) {
-	state.EventsSinceContinue++
-	changed.SendAsync(true)
-}
-
-func shouldContinueWordflowLevel(ctx workflow.Context, state *WordflowLevelState) bool {
-	return state.EventsSinceContinue >= state.ContinueAfterEvents ||
-		workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
+func shouldContinueWordflowLevel(ctx workflow.Context) bool {
+	return workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 		workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged()
 }
 

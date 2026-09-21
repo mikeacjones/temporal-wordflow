@@ -30,8 +30,9 @@ async function api(path, options = {}) {
 }
 
 async function openSession() {
+  let session;
   try {
-    player = await api("/api/session");
+    session = await api("/api/session");
   } catch (error) {
     if (error.status === 401) {
       showAuthentication();
@@ -39,15 +40,17 @@ async function openSession() {
     }
     throw error;
   }
-  await showPlayer();
+  player = session.player;
+  await showPlayer(session.catalog, session.game);
 }
 
 async function authenticate(path, form) {
   const input = Object.fromEntries(new FormData(form));
   input.requestId = requestID();
-  player = await api(path, { method: "POST", body: JSON.stringify(input) });
+  const session = await api(path, { method: "POST", body: JSON.stringify(input) });
+  player = session.player;
   form.reset();
-  await showPlayer();
+  await showPlayer(session.catalog, session.game);
 }
 
 async function logOut() {
@@ -72,7 +75,7 @@ function showAuthentication() {
   elements.logout.hidden = true;
 }
 
-async function showPlayer() {
+async function showPlayer(initialCatalog, initialGame) {
   elements.auth.hidden = true;
   elements["player-name"].hidden = false;
   elements["player-name"].textContent = player.displayName;
@@ -81,10 +84,10 @@ async function showPlayer() {
   renderPlayer();
   loadWorkflowLink(elements["player-workflow"], "/api/me/workflow-link").catch(showError);
   if (player.activeGame) {
-    await resumeGame();
+    await resumeGame(initialGame);
   } else {
     currentGame = undefined;
-    await showCatalog();
+    await showCatalog(initialCatalog);
   }
 }
 
@@ -106,7 +109,7 @@ function renderPlayer() {
   elements["buy-streak-freeze"].disabled = player.streakFreeze || player.points < player.streakFreezeCost;
 }
 
-async function showCatalog() {
+async function showCatalog(initialCatalog) {
   stopSpeedBonusTicker();
   stopCampaignTicker();
   currentGame = undefined;
@@ -115,7 +118,7 @@ async function showCatalog() {
   elements.game.hidden = true;
   elements.complete.hidden = true;
   elements.catalog.hidden = false;
-  catalog = await api("/api/catalog");
+  catalog = initialCatalog || await api("/api/catalog");
   renderCatalog();
 }
 
@@ -156,8 +159,7 @@ function renderCampaign(campaign) {
   workflow.target = "_blank";
   workflow.rel = "noopener";
   workflow.textContent = "Campaign Workflow ↗";
-  workflow.setAttribute("aria-disabled", "true");
-  loadWorkflowLink(workflow, `/api/campaigns/${campaign.campaignId}/workflow-link`).catch(showError);
+  workflow.href = campaign.workflowUrl;
   heading.append(copy, workflow);
 
   const description = document.createElement("p");
@@ -288,9 +290,9 @@ async function startGame(campaignId, level) {
   renderPlayer();
 }
 
-async function resumeGame() {
+async function resumeGame(initialGame) {
   const active = player.activeGame;
-  currentGame = await api(`/api/me/campaigns/${active.campaignId}/levels/${active.level}`);
+  currentGame = initialGame || await api(`/api/me/campaigns/${active.campaignId}/levels/${active.level}`);
   completionRefresh = undefined;
   loadWorkflowLink(elements["game-workflow"], `/api/me/campaigns/${active.campaignId}/levels/${active.level}/workflow-link`).catch(showError);
   renderGame();

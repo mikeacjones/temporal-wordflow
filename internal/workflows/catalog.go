@@ -13,25 +13,20 @@ type CatalogWorkflowInput struct {
 }
 
 type CatalogState struct {
-	Games               []campaign.GameSummary  `json:"games"`
-	Campaigns           []campaign.Registration `json:"campaigns"`
-	EventsSinceContinue int                     `json:"eventsSinceContinue"`
-	ContinueAfterEvents int                     `json:"continueAfterEvents"`
+	Games     []campaign.GameSummary  `json:"games"`
+	Campaigns []campaign.Registration `json:"campaigns"`
 }
 
 func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 	state := input.State
 	if state == nil {
-		state = &CatalogState{ContinueAfterEvents: defaultContinueAfterEvents}
+		state = &CatalogState{}
 		for _, registration := range input.InitialCampaigns {
 			if err := validateCampaignRegistration(state, registration); err != nil {
 				return err
 			}
 			addCampaign(state, registration)
 		}
-	}
-	if state.ContinueAfterEvents == 0 {
-		state.ContinueAfterEvents = defaultContinueAfterEvents
 	}
 	changed := workflow.NewBufferedChannel(ctx, 1)
 
@@ -40,7 +35,6 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 			for _, registration := range required {
 				addCampaign(state, registration)
 			}
-			state.EventsSinceContinue++
 			changed.SendAsync(true)
 			return catalogView(state), nil
 		}, workflow.UpdateHandlerOptions{
@@ -62,7 +56,6 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 				return catalogView(state), nil
 			}
 			addCampaign(state, registration)
-			state.EventsSinceContinue++
 			changed.SendAsync(true)
 			return catalogView(state), nil
 		}, workflow.UpdateHandlerOptions{
@@ -76,15 +69,13 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 	for {
 		var ignored bool
 		changed.Receive(ctx, &ignored)
-		if state.EventsSinceContinue < state.ContinueAfterEvents &&
-			!workflow.GetInfo(ctx).GetContinueAsNewSuggested() &&
+		if !workflow.GetInfo(ctx).GetContinueAsNewSuggested() &&
 			!workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
 			continue
 		}
 		if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 			return err
 		}
-		state.EventsSinceContinue = 0
 		return continueCatalogAsNew(ctx, state)
 	}
 }

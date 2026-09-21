@@ -175,11 +175,6 @@ type PlayerView struct {
 	ActiveGame           *ActiveGame                       `json:"activeGame,omitempty"`
 }
 
-type SessionView struct {
-	PlayerID    string `json:"playerId"`
-	DisplayName string `json:"displayName"`
-}
-
 type LeaderboardEntry struct {
 	PlayerID             string `json:"playerId"`
 	DisplayName          string `json:"displayName"`

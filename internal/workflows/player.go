@@ -13,10 +13,9 @@ import (
 )
 
 const (
-	playerTimeZone             = "America/Toronto"
-	defaultContinueAfterEvents = 250
-	streakFreezePointCost      = 50
-	maxPlayerSessions          = 5
+	playerTimeZone        = "America/Toronto"
+	streakFreezePointCost = 50
+	maxPlayerSessions     = 5
 )
 
 var torontoLocation = mustLoadLocation(playerTimeZone)
@@ -44,8 +43,6 @@ type PlayerState struct {
 	CompletedLevels      []game.LevelCompletion            `json:"completedLevels"`
 	Rewards              []game.Reward                     `json:"rewards"`
 	ActiveGame           *game.ActiveGame                  `json:"activeGame,omitempty"`
-	EventsSinceContinue  int                               `json:"eventsSinceContinue"`
-	ContinueAfterEvents  int                               `json:"continueAfterEvents"`
 }
 
 type OpenSessionInput struct {
@@ -106,13 +103,13 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 		return err
 	}
 
-	if err := workflow.SetQueryHandler(ctx, QueryPlayerSession, func(tokenHash string) (game.SessionView, error) {
+	if err := workflow.SetQueryHandler(ctx, QueryPlayerSession, func(tokenHash string) (game.PlayerView, error) {
 		for _, session := range state.Sessions {
 			if session.TokenHash == tokenHash && workflow.Now(ctx).Before(session.ExpiresAt) {
-				return game.SessionView{PlayerID: state.PlayerID, DisplayName: state.DisplayName}, nil
+				return playerView(state), nil
 			}
 		}
-		return game.SessionView{}, temporal.NewApplicationError("session is invalid or expired", "invalid_session")
+		return game.PlayerView{}, temporal.NewApplicationError("session is invalid or expired", "invalid_session")
 	}); err != nil {
 		return err
 	}
@@ -140,7 +137,7 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 			}
 			state.LastSeenAt = now
 			expireStreakIfNeeded(state, now)
-			recordPlayerMutation(state, changed)
+			changed.SendAsync(true)
 			return playerView(state), nil
 		}, workflow.UpdateHandlerOptions{
 			Validator: func(ctx workflow.Context, update OpenSessionInput) error {
@@ -156,7 +153,7 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 		}
 		defer lock.Unlock()
 		state.Sessions = activePlayerSessions(state.Sessions, workflow.Now(ctx), update.TokenHash)
-		recordPlayerMutation(state, changed)
+		changed.SendAsync(true)
 		return playerView(state), nil
 	}); err != nil {
 		return err
@@ -175,7 +172,7 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 			}
 			state.LastSeenAt = now
 			expireStreakIfNeeded(state, now)
-			recordPlayerMutation(state, changed)
+			changed.SendAsync(true)
 			return playerView(state), nil
 		}, workflow.UpdateHandlerOptions{
 			Validator: func(ctx workflow.Context, update ResumeSessionInput) error {
@@ -229,7 +226,7 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 			Level: update.Level, Title: resolution.Puzzle.Title, TotalLevels: resolution.TotalLevels,
 		}
 		state.LastSeenAt = now
-		recordPlayerMutation(state, changed)
+		changed.SendAsync(true)
 		return playerView(state), nil
 	}, workflow.UpdateHandlerOptions{
 		Validator: func(_ workflow.Context, update StartLevelInput) error {
@@ -257,7 +254,7 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 			}
 			state.Points -= update.Amount
 			state.LastSeenAt = workflow.Now(ctx)
-			recordPlayerMutation(state, changed)
+			changed.SendAsync(true)
 			return SpendPointsResult{Spent: update.Amount, Remaining: state.Points}, nil
 		}, workflow.UpdateHandlerOptions{
 			Validator: func(_ workflow.Context, update SpendPointsInput) error {
@@ -280,7 +277,7 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 			state.Points -= streakFreezePointCost
 			state.StreakFreeze = true
 			state.LastSeenAt = workflow.Now(ctx)
-			recordPlayerMutation(state, changed)
+			changed.SendAsync(true)
 			return playerView(state), nil
 		}, workflow.UpdateHandlerOptions{
 			Validator: func(_ workflow.Context, _ BuyStreakFreezeInput) error {
@@ -335,7 +332,6 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 			if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 				return err
 			}
-			state.EventsSinceContinue = 0
 			return continuePlayerAsNew(ctx, state)
 		}
 	}
@@ -343,20 +339,11 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 
 func initialPlayerState(ctx workflow.Context, input PlayerWorkflowInput) *PlayerState {
 	if input.State != nil {
-		state := input.State
-		if state.ContinueAfterEvents == 0 {
-			state.ContinueAfterEvents = defaultContinueAfterEvents
-		}
-		return state
+		return input.State
 	}
 
 	now := workflow.Now(ctx)
-	return &PlayerState{
-		PlayerID:            input.PlayerID,
-		CreatedAt:           now,
-		LastSeenAt:          now,
-		ContinueAfterEvents: defaultContinueAfterEvents,
-	}
+	return &PlayerState{PlayerID: input.PlayerID, CreatedAt: now, LastSeenAt: now}
 }
 
 func playerView(state *PlayerState) game.PlayerView {
@@ -408,7 +395,6 @@ func applyLevelResult(state *PlayerState, result campaign.LevelResult) bool {
 	state.LastSeenAt = result.CompletedAt
 	state.Points += points
 	state.LifetimePointsEarned += points
-	state.EventsSinceContinue++
 	return true
 }
 
@@ -477,14 +463,8 @@ func joinPlayerCampaign(state *PlayerState, campaignID string, joinedAt time.Tim
 	})
 }
 
-func recordPlayerMutation(state *PlayerState, changed workflow.SendChannel) {
-	state.EventsSinceContinue++
-	changed.SendAsync(true)
-}
-
 func shouldContinuePlayer(ctx workflow.Context, state *PlayerState) bool {
-	return state.ActiveGame == nil && (state.EventsSinceContinue >= state.ContinueAfterEvents ||
-		workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
+	return state.ActiveGame == nil && (workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 		workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged())
 }
 

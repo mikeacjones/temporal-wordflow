@@ -15,17 +15,13 @@ type LeaderboardWorkflowInput struct {
 }
 
 type LeaderboardState struct {
-	Entries             []game.LeaderboardEntry `json:"entries"`
-	EventsSinceContinue int                     `json:"eventsSinceContinue"`
-	ContinueAfterEvents int                     `json:"continueAfterEvents"`
+	Entries []game.LeaderboardEntry `json:"entries"`
 }
 
 func LeaderboardWorkflow(ctx workflow.Context, input LeaderboardWorkflowInput) error {
 	state := input.State
 	if state == nil {
-		state = &LeaderboardState{ContinueAfterEvents: defaultContinueAfterEvents}
-	} else if state.ContinueAfterEvents == 0 {
-		state.ContinueAfterEvents = defaultContinueAfterEvents
+		state = &LeaderboardState{}
 	}
 
 	if err := workflow.SetQueryHandler(ctx, QueryLeaderboard, func() (game.LeaderboardView, error) {
@@ -46,12 +42,8 @@ func LeaderboardWorkflow(ctx workflow.Context, input LeaderboardWorkflowInput) e
 		var entry game.LeaderboardEntry
 		scores.Receive(ctx, &entry)
 		upsertLeaderboardEntry(state, entry)
-		state.EventsSinceContinue++
-
-		if state.EventsSinceContinue >= state.ContinueAfterEvents ||
-			workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
+		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 			workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
-			state.EventsSinceContinue = 0
 			return continueLeaderboardAsNew(ctx, state)
 		}
 	}
