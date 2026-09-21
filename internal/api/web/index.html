@@ -6,7 +6,7 @@
   <title>Temporal Wordflow</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
+<body data-session="unknown">
   <span id="player-name" class="player-identity" hidden></span>
   <main class="shell">
     <header>
@@ -28,6 +28,13 @@
     <div class="status-rail"><span></span> Temporal durable state · active</div>
 
     <section id="notice" class="notice" hidden></section>
+
+    <section id="startup" class="card app-loading" role="status" aria-live="polite">
+      <span class="campaign-loading-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <p class="eyebrow">Restoring durable state</p>
+      <h2>Loading Wordflow</h2>
+      <p>Checking for an active player session…</p>
+    </section>
 
     <section id="auth" class="auth-grid">
       <form id="login-form" class="card auth-card">
@@ -129,7 +136,7 @@
       <p class="eyebrow">Workflow completed</p>
       <h2>Execution succeeded.</h2>
       <p id="complete-summary"></p>
-      <button id="continue" class="primary">Next wordflow</button>
+      <button id="continue" class="primary">Checking next level…</button>
     </section>
   </main>
   <script src="/app.js" defer></script>

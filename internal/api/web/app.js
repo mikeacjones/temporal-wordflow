@@ -3,6 +3,7 @@ let catalog;
 let currentGame;
 let selectedIndexes = [];
 let completionRefresh;
+let completionAction;
 let noticeTimer;
 let speedBonusTimer;
 let campaignTimer;
@@ -30,7 +31,6 @@ async function api(path, options = {}) {
 }
 
 async function openSession() {
-  showCampaignLoadingScreen();
   let session;
   try {
     session = await api("/api/session");
@@ -72,6 +72,8 @@ async function logOut() {
 function showAuthentication() {
   stopSpeedBonusTicker();
   stopCampaignTicker();
+  document.body.dataset.session = "anonymous";
+  elements.startup.hidden = true;
   elements.auth.hidden = false;
   elements.stats.hidden = true;
   elements["point-shop"].hidden = true;
@@ -84,6 +86,7 @@ function showAuthentication() {
 }
 
 function showCampaignLoadingScreen() {
+  elements.startup.hidden = true;
   elements.auth.hidden = true;
   elements.stats.hidden = true;
   elements["point-shop"].hidden = true;
@@ -94,6 +97,8 @@ function showCampaignLoadingScreen() {
 }
 
 async function showPlayer(initialCatalog, initialGame) {
+  document.body.dataset.session = "authenticated";
+  elements.startup.hidden = true;
   elements.auth.hidden = true;
   elements["player-name"].hidden = false;
   elements["player-name"].textContent = player.displayName;
@@ -201,9 +206,13 @@ function renderCampaign(campaign) {
   levels.className = "campaign-levels";
   levels.replaceChildren(...campaign.levels.map((level) => {
     const item = document.createElement("span");
-    item.className = `campaign-level ${level.status}`;
-    item.title = `Level ${level.level}: ${level.title} · ${level.status}`;
+    const displayStatus = levelDisplayStatus(campaign, level);
+    item.className = `campaign-level ${displayStatus}`;
+    item.title = `Level ${level.level}: ${level.title} · ${displayStatus}`;
     item.dataset.level = level.level;
+    if (level.status === "locked" && displayStatus === "locked" && level.unlockedAt) {
+      item.dataset.locksUntil = level.unlockedAt;
+    }
     item.textContent = level.level;
     return item;
   }));
@@ -241,6 +250,11 @@ function renderCampaign(campaign) {
   return card;
 }
 
+function levelDisplayStatus(campaign, level, now = Date.now()) {
+  if (campaign.lockedReason || level.status !== "locked" || !level.unlockedAt) return level.status;
+  return Date.parse(level.unlockedAt) <= now ? "unlocked" : "locked";
+}
+
 function campaignCountdown(at) {
   const countdown = document.createElement("span");
   countdown.className = "campaign-countdown";
@@ -250,10 +264,21 @@ function campaignCountdown(at) {
 
 function startCampaignTicker() {
   stopCampaignTicker();
+  const lockedLevels = [...elements.campaigns.querySelectorAll("[data-locks-until]")];
   const buttons = [...elements.campaigns.querySelectorAll("[data-unlocks-at]")];
   const countdowns = [...elements.campaigns.querySelectorAll("[data-countdown-at]")];
   const tick = () => {
     let waiting = false;
+    lockedLevels.forEach((level) => {
+      if (Date.parse(level.dataset.locksUntil) <= Date.now()) {
+        level.classList.remove("locked");
+        level.classList.add("unlocked");
+        level.title = level.title.replace(/ · [^·]+$/, " · unlocked");
+        delete level.dataset.locksUntil;
+        return;
+      }
+      waiting = true;
+    });
     buttons.forEach((button) => {
       const remaining = Date.parse(button.dataset.unlocksAt) - Date.now();
       const countdown = button.querySelector(".campaign-unlock-countdown");
@@ -329,6 +354,7 @@ async function resumeGame(initialGame) {
   const active = player.activeGame;
   currentGame = initialGame || await api(`/api/me/campaigns/${active.campaignId}/levels/${active.level}`);
   completionRefresh = undefined;
+  completionAction = undefined;
   loadWorkflowLink(elements["game-workflow"], `/api/me/campaigns/${active.campaignId}/levels/${active.level}/workflow-link`).catch(showError);
   renderGame();
 }
@@ -551,14 +577,28 @@ function formatDuration(totalSeconds) {
 function beginCompletionRefresh() {
   if (completionRefresh) return;
   elements.continue.disabled = true;
-  completionRefresh = refreshPlayerAfterCompletion();
+  elements.continue.textContent = "Checking next level…";
+  completionRefresh = prepareCompletionAction();
   completionRefresh.then(() => {
     elements.continue.disabled = false;
   }, (error) => {
     completionRefresh = undefined;
     elements.continue.disabled = false;
+    elements.continue.textContent = "Try again";
     showError(error);
   });
+}
+
+async function prepareCompletionAction() {
+  await refreshPlayerAfterCompletion();
+  const latestCatalog = await api("/api/catalog");
+  const campaign = latestCatalog.campaigns.find((item) => item.campaignId === currentGame.campaignId);
+  const nextLevel = campaign?.levels.find((level) => level.status === "available");
+  catalog = latestCatalog;
+  completionAction = nextLevel
+    ? { campaignId: campaign.campaignId, level: nextLevel.level }
+    : undefined;
+  elements.continue.textContent = nextLevel ? `Play level ${nextLevel.level}` : "Back to campaigns";
 }
 
 async function refreshPlayerAfterCompletion() {
@@ -576,12 +616,18 @@ async function refreshPlayerAfterCompletion() {
 }
 
 async function showNextWordflow() {
-  if (player.activeGame) {
-    if (!completionRefresh) beginCompletionRefresh();
-    await completionRefresh;
+  if (!completionRefresh && player.activeGame) {
+    beginCompletionRefresh();
   }
+  if (completionRefresh) await completionRefresh;
   completionRefresh = undefined;
-  await showCatalog();
+  if (completionAction) {
+    const next = completionAction;
+    completionAction = undefined;
+    await startGame(next.campaignId, next.level);
+    return;
+  }
+  await showCatalog(catalog);
 }
 
 async function loadWorkflowLink(element, path) {
@@ -622,4 +668,8 @@ function showError(error) {
   showNotice(error.message || String(error));
 }
 
-openSession().catch(showError);
+if (document.body.dataset.session === "authenticated") {
+  openSession().catch(showError);
+} else {
+  showAuthentication();
+}

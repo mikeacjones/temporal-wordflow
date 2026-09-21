@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"embed"
@@ -72,6 +73,22 @@ func New(temporalClient client.Client, taskQueue, temporalUIURL, temporalNamespa
 	if err != nil {
 		panic(err)
 	}
+	indexHTML, err := fs.ReadFile(static, "index.html")
+	if err != nil {
+		panic(err)
+	}
+	indexPage := func(writer http.ResponseWriter, request *http.Request) {
+		sessionState := "anonymous"
+		if _, err := sessionCookie(request, server.sessionJWTSecret, time.Now()); err == nil {
+			sessionState = "authenticated"
+		}
+		page := bytes.Replace(indexHTML, []byte(`data-session="unknown"`),
+			[]byte(`data-session="`+sessionState+`"`), 1)
+		writer.Header().Set("Cache-Control", "no-store")
+		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+		writer.Header().Set("Vary", "Cookie")
+		_, _ = writer.Write(page)
+	}
 	leaderboardPage := func(writer http.ResponseWriter, _ *http.Request) {
 		page, err := fs.ReadFile(static, "leaderboard.html")
 		if err != nil {
@@ -81,6 +98,8 @@ func New(temporalClient client.Client, taskQueue, temporalUIURL, temporalNamespa
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = writer.Write(page)
 	}
+	mux.HandleFunc("GET /{$}", indexPage)
+	mux.HandleFunc("GET /index.html", indexPage)
 	mux.HandleFunc("GET /leaderboard", leaderboardPage)
 	mux.HandleFunc("GET /leaderboard/", leaderboardPage)
 	mux.Handle("/", http.FileServer(http.FS(static)))
@@ -691,13 +710,16 @@ func (s *Server) authenticatedPlayer(request *http.Request) (game.PlayerView, er
 	if err != nil {
 		return game.PlayerView{}, err
 	}
-	result, err := s.temporal.QueryWorkflow(request.Context(), workflows.PlayerWorkflowID(playerID), "",
-		workflows.QueryPlayerState)
-	if err != nil {
+	response, err := s.temporal.QueryWorkflowWithOptions(request.Context(), &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           workflows.PlayerWorkflowID(playerID),
+		QueryType:            workflows.QueryPlayerState,
+		QueryRejectCondition: enums.QUERY_REJECT_CONDITION_NOT_OPEN,
+	})
+	if err != nil || response == nil || response.QueryRejected != nil || response.QueryResult == nil {
 		return game.PlayerView{}, errors.New("session is invalid or expired")
 	}
 	var player game.PlayerView
-	if err := result.Get(&player); err != nil {
+	if err := response.QueryResult.Get(&player); err != nil {
 		return game.PlayerView{}, errors.New("session is invalid or expired")
 	}
 	return player, nil

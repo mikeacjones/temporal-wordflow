@@ -17,6 +17,8 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+body[data-session="anonymous"] #startup,
+body[data-session="authenticated"] #auth { display: none; }
 
 body {
   margin: 0;
@@ -143,6 +145,17 @@ h2 { margin-bottom: 8px; font-size: clamp(1.5rem, 4vw, 2.15rem); letter-spacing:
   gap: 18px;
   margin-top: 18px;
 }
+.app-loading {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  margin-top: 18px;
+  text-align: center;
+}
+.app-loading .eyebrow, .app-loading h2, .app-loading p { margin-bottom: 0; }
+.app-loading > p:last-child { color: var(--muted); }
 .auth-card { display: flex; flex-direction: column; gap: 14px; }
 .auth-card h2 { margin-bottom: 0; }
 .auth-card label { display: grid; gap: 6px; color: var(--muted); font-size: .76rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
