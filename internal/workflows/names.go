@@ -8,7 +8,8 @@ import (
 )
 
 const (
-	TaskQueue = "temporal-word-game"
+	TaskQueue            = "temporal-word-game"
+	WorkerDeploymentName = "temporal-word-game"
 
 	CatalogWorkflowName          = "CatalogWorkflow"
 	WordflowCampaignWorkflowName = "WordflowCampaignWorkflow"
@@ -60,8 +61,7 @@ func WordflowLevelWorkflowID(playerID, campaignID string, level int) string {
 	return fmt.Sprintf("wordflow-level/%s/%s/%d", playerID, campaignID, level)
 }
 
-// Register uses ordinary registrations locally and pinned registrations in
-// Lambda, where Serverless Workers require Worker Versioning.
+// Register uses pinned registrations when Worker Versioning is enabled.
 func Register(registry worker.Registry, versioned bool) {
 	if !versioned {
 		registry.RegisterWorkflowWithOptions(CatalogWorkflow, workflow.RegisterOptions{Name: CatalogWorkflowName})

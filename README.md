@@ -211,6 +211,14 @@ setup and IAM steps are documented in the
 The web API can run anywhere that can reach Temporal. It remains stateless and
 does not need to share a process or filesystem with a Worker.
 
+## Kubernetes steady worker
+
+[`docker/worker.Dockerfile`](docker/worker.Dockerfile) builds the long-running
+worker for steady Kubernetes traffic. Set `TEMPORAL_WORKER_BUILD_ID` to the
+same Build ID as the Lambda worker so both processes poll the same pinned
+Worker Deployment Version. Without that variable, the worker remains
+unversioned for local development.
+
 ## Serverless AWS deployment
 
 [`deploy/terraform`](deploy/terraform) deploys the complete public demo into the

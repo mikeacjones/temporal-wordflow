@@ -24,7 +24,7 @@ func main() {
 	}
 
 	lambdaworker.RunWorker(worker.WorkerDeploymentVersion{
-		DeploymentName: "temporal-word-game",
+		DeploymentName: workflows.WorkerDeploymentName,
 		BuildID:        buildID,
 	}, func(options *lambdaworker.Options) error {
 		if options.TaskQueue == "" {

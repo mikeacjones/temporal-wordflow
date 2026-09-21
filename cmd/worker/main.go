@@ -24,12 +24,24 @@ func main() {
 		taskQueue = workflows.TaskQueue
 	}
 
-	localWorker := worker.New(temporalClient, taskQueue, worker.Options{})
-	workflows.Register(localWorker, false)
-	localWorker.RegisterActivity(&activities.Campaigns{Temporal: temporalClient, TaskQueue: taskQueue})
-	localWorker.RegisterActivity(&activities.Points{Temporal: temporalClient})
-	localWorker.RegisterActivity(&activities.Leaderboard{Temporal: temporalClient, TaskQueue: taskQueue})
-	if err := localWorker.Run(worker.InterruptCh()); err != nil {
+	buildID := os.Getenv("TEMPORAL_WORKER_BUILD_ID")
+	workerOptions := worker.Options{}
+	if buildID != "" {
+		workerOptions.DeploymentOptions = worker.DeploymentOptions{
+			UseVersioning: true,
+			Version: worker.WorkerDeploymentVersion{
+				DeploymentName: workflows.WorkerDeploymentName,
+				BuildID:        buildID,
+			},
+		}
+	}
+
+	temporalWorker := worker.New(temporalClient, taskQueue, workerOptions)
+	workflows.Register(temporalWorker, buildID != "")
+	temporalWorker.RegisterActivity(&activities.Campaigns{Temporal: temporalClient, TaskQueue: taskQueue})
+	temporalWorker.RegisterActivity(&activities.Points{Temporal: temporalClient})
+	temporalWorker.RegisterActivity(&activities.Leaderboard{Temporal: temporalClient, TaskQueue: taskQueue})
+	if err := temporalWorker.Run(worker.InterruptCh()); err != nil {
 		log.Fatal(err)
 	}
 }
