@@ -155,6 +155,8 @@ func wordflowCampaignView(ctx workflow.Context, state *WordflowCampaignState, pl
 			status = campaign.LevelActive
 		case eligible && puzzle.Level == nextLevel && puzzle.Level <= unlocked:
 			status = campaign.LevelAvailable
+		case eligible && puzzle.Level <= unlocked:
+			status = campaign.LevelUnlocked
 		}
 		levels = append(levels, campaign.LevelView{
 			Level: puzzle.Level, Title: puzzle.Title, Status: status,

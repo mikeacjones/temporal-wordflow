@@ -36,14 +36,19 @@ type Server struct {
 	taskQueue         string
 	temporalUIURL     string
 	temporalNamespace string
+	sessionJWTSecret  []byte
 }
 
-func New(temporalClient client.Client, taskQueue, temporalUIURL, temporalNamespace string) http.Handler {
+func New(temporalClient client.Client, taskQueue, temporalUIURL, temporalNamespace, sessionJWTSecret string) http.Handler {
+	if len(sessionJWTSecret) < 32 {
+		panic("SESSION_JWT_SECRET must contain at least 32 characters")
+	}
 	server := &Server{
 		temporal:          temporalClient,
 		taskQueue:         taskQueue,
 		temporalUIURL:     temporalUIURL,
 		temporalNamespace: temporalNamespace,
+		sessionJWTSecret:  []byte(sessionJWTSecret),
 	}
 	mux := http.NewServeMux()
 
@@ -115,7 +120,7 @@ func (s *Server) signUp(writer http.ResponseWriter, request *http.Request) {
 		input.RequestID = newID()
 	}
 
-	view, rawToken, expiresAt, err := s.openPlayerSession(request.Context(), username, displayName,
+	view, rawToken, expiresAt, err := s.authenticatePlayer(request.Context(), username, displayName,
 		passwordHash, input.RequestID, true)
 	if err != nil {
 		var applicationError *temporal.ApplicationError
@@ -131,7 +136,7 @@ func (s *Server) signUp(writer http.ResponseWriter, request *http.Request) {
 		writeTemporalError(writer, err)
 		return
 	}
-	setSessionCookie(writer, request, username, rawToken, expiresAt)
+	setSessionCookie(writer, request, rawToken, expiresAt)
 	writeJSON(writer, http.StatusCreated, response)
 }
 
@@ -155,7 +160,7 @@ func (s *Server) logIn(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	view, rawToken, expiresAt, err := s.openPlayerSession(request.Context(), username, "",
+	view, rawToken, expiresAt, err := s.authenticatePlayer(request.Context(), username, "",
 		passwordHash, input.RequestID, false)
 	if err != nil {
 		var notFound *serviceerror.NotFound
@@ -176,19 +181,12 @@ func (s *Server) logIn(writer http.ResponseWriter, request *http.Request) {
 		writeTemporalError(writer, err)
 		return
 	}
-	setSessionCookie(writer, request, username, rawToken, expiresAt)
+	setSessionCookie(writer, request, rawToken, expiresAt)
 	writeJSON(writer, http.StatusOK, response)
 }
 
 func (s *Server) openSession(writer http.ResponseWriter, request *http.Request) {
-	playerID, rawToken, err := sessionCookie(request)
-	if err != nil {
-		writeError(writer, http.StatusUnauthorized, err)
-		return
-	}
-	var view game.PlayerView
-	err = s.update(request.Context(), workflows.PlayerWorkflowID(playerID), newID(), workflows.UpdateResumeSession,
-		workflows.ResumeSessionInput{TokenHash: sessionTokenHash(rawToken)}, &view)
+	view, err := s.authenticatedPlayer(request)
 	if err != nil {
 		writeError(writer, http.StatusUnauthorized, errors.New("session is invalid or expired"))
 		return
@@ -201,20 +199,34 @@ func (s *Server) openSession(writer http.ResponseWriter, request *http.Request) 
 	writeJSON(writer, http.StatusOK, response)
 }
 
-func (s *Server) openPlayerSession(ctx context.Context, username, displayName, passwordHash, requestID string,
+type authenticatePlayerUpdate struct {
+	DisplayName  string    `json:"displayName"`
+	PasswordHash string    `json:"passwordHash"`
+	Register     bool      `json:"register"`
+	TokenHash    string    `json:"tokenHash,omitempty"`
+	ExpiresAt    time.Time `json:"expiresAt,omitempty"`
+}
+
+func (s *Server) authenticatePlayer(ctx context.Context, username, displayName, passwordHash, requestID string,
 	register bool,
 ) (game.PlayerView, string, time.Time, error) {
-	rawToken, tokenHash := sessionToken(passwordHash, requestID)
-	expiresAt := time.Now().Add(sessionLifetime)
-	update := workflows.OpenSessionInput{
-		DisplayName: displayName, PasswordHash: passwordHash,
-		TokenHash: tokenHash, ExpiresAt: expiresAt, Register: register,
+	issuedAt := time.Now().UTC()
+	expiresAt := issuedAt.Add(sessionLifetime)
+	rawToken, err := newSessionToken(s.sessionJWTSecret, username, issuedAt, expiresAt)
+	if err != nil {
+		return game.PlayerView{}, "", time.Time{}, err
+	}
+	update := authenticatePlayerUpdate{
+		DisplayName: displayName, PasswordHash: passwordHash, Register: register,
+		// These two fields keep login compatible with accounts pinned to the
+		// previous Worker version. The new Workflow ignores them.
+		TokenHash: sessionTokenHash(rawToken), ExpiresAt: expiresAt,
 	}
 	workflowID := workflows.PlayerWorkflowID(username)
 	var view game.PlayerView
 
 	if !register {
-		err := s.update(ctx, workflowID, requestID, workflows.UpdateOpenSession, update, &view)
+		err := s.update(ctx, workflowID, requestID, workflows.UpdateAuthenticatePlayer, update, &view)
 		return view, rawToken, expiresAt, err
 	}
 
@@ -226,7 +238,7 @@ func (s *Server) openPlayerSession(ctx context.Context, username, displayName, p
 	handle, err := s.temporal.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
 		StartWorkflowOperation: start,
 		UpdateOptions: client.UpdateWorkflowOptions{
-			UpdateID: requestID, UpdateName: workflows.UpdateOpenSession,
+			UpdateID: requestID, UpdateName: workflows.UpdateAuthenticatePlayer,
 			WaitForStage: client.WorkflowUpdateStageCompleted, Args: []any{update},
 		},
 	})
@@ -246,12 +258,12 @@ func (s *Server) getPlayer(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) getPlayerWorkflowLink(writer http.ResponseWriter, request *http.Request) {
-	player, err := s.authenticatedPlayer(request)
+	playerID, err := s.authenticatedPlayerID(request)
 	if err != nil {
 		writeError(writer, http.StatusUnauthorized, err)
 		return
 	}
-	s.writeWorkflowLink(writer, request, workflows.PlayerWorkflowID(player.PlayerID))
+	s.writeWorkflowLink(writer, request, workflows.PlayerWorkflowID(playerID))
 }
 
 type sessionResponse struct {
@@ -367,7 +379,7 @@ func (s *Server) catalog(ctx context.Context, player game.PlayerView) (catalogRe
 }
 
 func (s *Server) buyStreakFreeze(writer http.ResponseWriter, request *http.Request) {
-	player, err := s.authenticatedPlayer(request)
+	playerID, err := s.authenticatedPlayerID(request)
 	if err != nil {
 		writeError(writer, http.StatusUnauthorized, err)
 		return
@@ -385,7 +397,7 @@ func (s *Server) buyStreakFreeze(writer http.ResponseWriter, request *http.Reque
 	}
 
 	var view game.PlayerView
-	if err := s.update(request.Context(), workflows.PlayerWorkflowID(player.PlayerID), input.RequestID,
+	if err := s.update(request.Context(), workflows.PlayerWorkflowID(playerID), input.RequestID,
 		workflows.UpdateBuyStreakFreeze, workflows.BuyStreakFreezeInput{}, &view); err != nil {
 		writeTemporalError(writer, err)
 		return
@@ -399,7 +411,7 @@ type startGameRequest struct {
 }
 
 func (s *Server) startGame(writer http.ResponseWriter, request *http.Request) {
-	player, err := s.authenticatedPlayer(request)
+	playerID, err := s.authenticatedPlayerID(request)
 	if err != nil {
 		writeError(writer, http.StatusUnauthorized, err)
 		return
@@ -420,7 +432,7 @@ func (s *Server) startGame(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	var view game.PlayerView
-	if err := s.update(request.Context(), workflows.PlayerWorkflowID(player.PlayerID), input.RequestID, workflows.UpdateStartLevel,
+	if err := s.update(request.Context(), workflows.PlayerWorkflowID(playerID), input.RequestID, workflows.UpdateStartLevel,
 		workflows.StartLevelInput{CampaignID: campaignID, Level: input.Level}, &view); err != nil {
 		writeTemporalError(writer, err)
 		return
@@ -429,7 +441,7 @@ func (s *Server) startGame(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) getGame(writer http.ResponseWriter, request *http.Request) {
-	player, err := s.authenticatedPlayer(request)
+	playerID, err := s.authenticatedPlayerID(request)
 	if err != nil {
 		writeError(writer, http.StatusUnauthorized, err)
 		return
@@ -440,7 +452,7 @@ func (s *Server) getGame(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	result, err := s.temporal.QueryWorkflow(request.Context(), workflows.WordflowLevelWorkflowID(player.PlayerID, campaignID, level), "", workflows.QueryWordflowLevelState)
+	result, err := s.temporal.QueryWorkflow(request.Context(), workflows.WordflowLevelWorkflowID(playerID, campaignID, level), "", workflows.QueryWordflowLevelState)
 	if err != nil {
 		writeTemporalError(writer, err)
 		return
@@ -454,7 +466,7 @@ func (s *Server) getGame(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) getWordflowLevelWorkflowLink(writer http.ResponseWriter, request *http.Request) {
-	player, err := s.authenticatedPlayer(request)
+	playerID, err := s.authenticatedPlayerID(request)
 	if err != nil {
 		writeError(writer, http.StatusUnauthorized, err)
 		return
@@ -464,7 +476,7 @@ func (s *Server) getWordflowLevelWorkflowLink(writer http.ResponseWriter, reques
 		writeError(writer, http.StatusBadRequest, errors.New("invalid game ID"))
 		return
 	}
-	s.writeWorkflowLink(writer, request, workflows.WordflowLevelWorkflowID(player.PlayerID, campaignID, level))
+	s.writeWorkflowLink(writer, request, workflows.WordflowLevelWorkflowID(playerID, campaignID, level))
 }
 
 type guessRequest struct {
@@ -473,7 +485,7 @@ type guessRequest struct {
 }
 
 func (s *Server) submitGuess(writer http.ResponseWriter, request *http.Request) {
-	player, err := s.authenticatedPlayer(request)
+	playerID, err := s.authenticatedPlayerID(request)
 	if err != nil {
 		writeError(writer, http.StatusUnauthorized, err)
 		return
@@ -493,7 +505,7 @@ func (s *Server) submitGuess(writer http.ResponseWriter, request *http.Request) 
 	}
 
 	var result game.GuessResult
-	err = s.update(request.Context(), workflows.WordflowLevelWorkflowID(player.PlayerID, campaignID, level), input.RequestID, workflows.UpdateSubmitGuess,
+	err = s.update(request.Context(), workflows.WordflowLevelWorkflowID(playerID, campaignID, level), input.RequestID, workflows.UpdateSubmitGuess,
 		workflows.SubmitGuessInput{Word: input.Word}, &result)
 	if err != nil {
 		writeTemporalError(writer, err)
@@ -508,7 +520,7 @@ type hintRequest struct {
 }
 
 func (s *Server) useHint(writer http.ResponseWriter, request *http.Request) {
-	player, err := s.authenticatedPlayer(request)
+	playerID, err := s.authenticatedPlayerID(request)
 	if err != nil {
 		writeError(writer, http.StatusUnauthorized, err)
 		return
@@ -528,7 +540,7 @@ func (s *Server) useHint(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	var result game.HintResult
-	err = s.update(request.Context(), workflows.WordflowLevelWorkflowID(player.PlayerID, campaignID, level), input.RequestID, workflows.UpdateUseHint,
+	err = s.update(request.Context(), workflows.WordflowLevelWorkflowID(playerID, campaignID, level), input.RequestID, workflows.UpdateUseHint,
 		workflows.UseHintInput{Hint: input.Hint}, &result)
 	if err != nil {
 		writeTemporalError(writer, err)
@@ -538,7 +550,7 @@ func (s *Server) useHint(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) shuffle(writer http.ResponseWriter, request *http.Request) {
-	player, err := s.authenticatedPlayer(request)
+	playerID, err := s.authenticatedPlayerID(request)
 	if err != nil {
 		writeError(writer, http.StatusUnauthorized, err)
 		return
@@ -560,7 +572,7 @@ func (s *Server) shuffle(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	var view game.GameView
-	err = s.update(request.Context(), workflows.WordflowLevelWorkflowID(player.PlayerID, campaignID, level), input.RequestID, workflows.UpdateShuffle,
+	err = s.update(request.Context(), workflows.WordflowLevelWorkflowID(playerID, campaignID, level), input.RequestID, workflows.UpdateShuffle,
 		workflows.ShuffleInput{}, &view)
 	if err != nil {
 		writeTemporalError(writer, err)
@@ -569,13 +581,17 @@ func (s *Server) shuffle(writer http.ResponseWriter, request *http.Request) {
 	writeJSON(writer, http.StatusOK, view)
 }
 
+func (s *Server) authenticatedPlayerID(request *http.Request) (string, error) {
+	return sessionCookie(request, s.sessionJWTSecret, time.Now())
+}
+
 func (s *Server) authenticatedPlayer(request *http.Request) (game.PlayerView, error) {
-	playerID, rawToken, err := sessionCookie(request)
+	playerID, err := s.authenticatedPlayerID(request)
 	if err != nil {
 		return game.PlayerView{}, err
 	}
 	result, err := s.temporal.QueryWorkflow(request.Context(), workflows.PlayerWorkflowID(playerID), "",
-		workflows.QueryPlayerSession, sessionTokenHash(rawToken))
+		workflows.QueryPlayerState)
 	if err != nil {
 		return game.PlayerView{}, errors.New("session is invalid or expired")
 	}
@@ -587,12 +603,6 @@ func (s *Server) authenticatedPlayer(request *http.Request) (game.PlayerView, er
 }
 
 func (s *Server) logOut(writer http.ResponseWriter, request *http.Request) {
-	playerID, rawToken, err := sessionCookie(request)
-	if err == nil {
-		var ignored any
-		_ = s.update(request.Context(), workflows.PlayerWorkflowID(playerID), newID(), workflows.UpdateRevokeSession,
-			workflows.RevokeSessionInput{TokenHash: sessionTokenHash(rawToken)}, &ignored)
-	}
 	clearSessionCookie(writer, request)
 	writeJSON(writer, http.StatusOK, map[string]bool{"signedOut": true})
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,8 +18,17 @@ import (
 const (
 	passwordIterations = 600_000
 	sessionCookieName  = "wordflow_session"
+	sessionIssuer      = "temporal-wordflow"
 	sessionLifetime    = 30 * 24 * time.Hour
+	jwtHeader          = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
 )
+
+type sessionClaims struct {
+	Issuer    string `json:"iss"`
+	Subject   string `json:"sub"`
+	IssuedAt  int64  `json:"iat"`
+	ExpiresAt int64  `json:"exp"`
+}
 
 func normalizeUsername(value string) (string, error) {
 	value = strings.ToLower(strings.TrimSpace(value))
@@ -61,22 +71,30 @@ func passwordHash(username, password string) (string, error) {
 	return fmt.Sprintf("pbkdf2-sha256$%d$%s", passwordIterations, hex.EncodeToString(hash)), nil
 }
 
-func sessionToken(passwordHash, requestID string) (raw, hash string) {
-	mac := hmac.New(sha256.New, []byte(passwordHash))
-	_, _ = mac.Write([]byte("temporal-wordflow/session/" + requestID))
-	raw = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	digest := sha256.Sum256([]byte(raw))
-	return raw, hex.EncodeToString(digest[:])
+func newSessionToken(secret []byte, playerID string, issuedAt, expiresAt time.Time) (string, error) {
+	claims, err := json.Marshal(sessionClaims{
+		Issuer: sessionIssuer, Subject: playerID,
+		IssuedAt: issuedAt.Unix(), ExpiresAt: expiresAt.Unix(),
+	})
+	if err != nil {
+		return "", err
+	}
+	payload := base64.RawURLEncoding.EncodeToString(claims)
+	unsigned := jwtHeader + "." + payload
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte(unsigned))
+	return unsigned + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
+// Older pinned Player Workflows still accept this field during login.
 func sessionTokenHash(raw string) string {
 	digest := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(digest[:])
 }
 
-func setSessionCookie(writer http.ResponseWriter, request *http.Request, playerID, token string, expiresAt time.Time) {
+func setSessionCookie(writer http.ResponseWriter, request *http.Request, token string, expiresAt time.Time) {
 	http.SetCookie(writer, &http.Cookie{
-		Name: sessionCookieName, Value: playerID + "." + token,
+		Name: sessionCookieName, Value: token,
 		Path: "/", Expires: expiresAt, MaxAge: int(time.Until(expiresAt).Seconds()),
 		HttpOnly: true, Secure: request.TLS != nil || request.Header.Get("X-Forwarded-Proto") == "https",
 		SameSite: http.SameSiteLaxMode,
@@ -84,19 +102,38 @@ func setSessionCookie(writer http.ResponseWriter, request *http.Request, playerI
 }
 
 func clearSessionCookie(writer http.ResponseWriter, request *http.Request) {
-	setSessionCookie(writer, request, "", "", time.Unix(1, 0))
+	setSessionCookie(writer, request, "", time.Unix(1, 0))
 }
 
-func sessionCookie(request *http.Request) (playerID, token string, err error) {
+func sessionCookie(request *http.Request, secret []byte, now time.Time) (string, error) {
 	cookie, err := request.Cookie(sessionCookieName)
 	if err != nil {
-		return "", "", errors.New("not signed in")
+		return "", errors.New("not signed in")
 	}
-	playerID, token, ok := strings.Cut(cookie.Value, ".")
-	if !ok || !validUsername(playerID) || token == "" {
-		return "", "", errors.New("invalid session")
+	parts := strings.Split(cookie.Value, ".")
+	if len(parts) != 3 || parts[0] != jwtHeader {
+		return "", errors.New("invalid session")
 	}
-	return playerID, token, nil
+	unsigned := parts[0] + "." + parts[1]
+	signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return "", errors.New("invalid session")
+	}
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte(unsigned))
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return "", errors.New("invalid session")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", errors.New("invalid session")
+	}
+	var claims sessionClaims
+	if err := json.Unmarshal(payload, &claims); err != nil || claims.Issuer != sessionIssuer ||
+		!validUsername(claims.Subject) || claims.IssuedAt > now.Add(time.Minute).Unix() || now.Unix() >= claims.ExpiresAt {
+		return "", errors.New("invalid session")
+	}
+	return claims.Subject, nil
 }
 
 func validUsername(value string) bool {

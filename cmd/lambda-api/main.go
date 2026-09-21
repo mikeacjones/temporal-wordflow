@@ -31,11 +31,16 @@ func main() {
 		log.Fatal(err)
 	}
 	temporalNamespace := env("TEMPORAL_WEB_UI_NAMESPACE", clientOptions.Namespace)
+	sessionJWTSecret := os.Getenv("SESSION_JWT_SECRET")
+	if sessionJWTSecret == "" {
+		log.Fatal("SESSION_JWT_SECRET is required")
+	}
 	handler := api.New(
 		temporalClient,
 		taskQueue,
 		env("TEMPORAL_WEB_UI_URL", "https://cloud.temporal.io"),
 		temporalNamespace,
+		sessionJWTSecret,
 	)
 	lambda.Start(httpadapter.NewV2(handler).ProxyWithContext)
 }

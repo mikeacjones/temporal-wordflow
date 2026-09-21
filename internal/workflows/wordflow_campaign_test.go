@@ -29,11 +29,16 @@ func TestWordflowCampaignExposesTheCommonCampaignQueries(t *testing.T) {
 		}).Return(nil).Once()
 
 	joinedAt := env.Now()
-	levels := []game.Puzzle{{Level: 1, Title: "One"}, {Level: 2, Title: "Two"}}
+	levels := []game.Puzzle{
+		{Level: 1, Title: "One"},
+		{Level: 2, Title: "Two"},
+		{Level: 3, Title: "Three"},
+		{Level: 4, Title: "Four"},
+	}
 	definition := campaign.Definition{
 		ID: "test", Game: campaign.GameSummary{ID: campaign.GameWordflow, Title: "Wordflow"},
 		Title:  "Test campaign",
-		Unlock: campaign.UnlockPolicy{InitialLevels: 1, LevelsPerInterval: 1, Interval: 24 * time.Hour},
+		Unlock: campaign.UnlockPolicy{InitialLevels: 3, LevelsPerInterval: 1, Interval: 24 * time.Hour},
 	}
 	var summary campaign.Summary
 	var view campaign.View
@@ -62,7 +67,9 @@ func TestWordflowCampaignExposesTheCommonCampaignQueries(t *testing.T) {
 	require.Equal(t, "test", summary.CampaignID)
 	require.Equal(t, campaign.StatusActive, summary.Status)
 	require.Equal(t, campaign.LevelAvailable, view.Levels[0].Status)
-	require.Equal(t, campaign.LevelLocked, view.Levels[1].Status)
+	require.Equal(t, campaign.LevelUnlocked, view.Levels[1].Status)
+	require.Equal(t, campaign.LevelUnlocked, view.Levels[2].Status)
+	require.Equal(t, campaign.LevelLocked, view.Levels[3].Status)
 	require.True(t, resolution.Allowed)
 	require.Equal(t, levels[0], resolution.Puzzle)
 	require.True(t, strings.HasPrefix(registrationUpdateID, "register/test/"))

@@ -29,11 +29,15 @@ func main() {
 	if temporalNamespace == "" {
 		temporalNamespace = "default"
 	}
+	sessionJWTSecret := os.Getenv("SESSION_JWT_SECRET")
+	if sessionJWTSecret == "" {
+		log.Fatal("SESSION_JWT_SECRET is required")
+	}
 	if _, err := bootstrap.StartDefaultCampaign(context.Background(), temporalClient, taskQueue); err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("web app listening on %s", address)
-	if err := http.ListenAndServe(address, api.New(temporalClient, taskQueue, temporalUIURL, temporalNamespace)); err != nil {
+	if err := http.ListenAndServe(address, api.New(temporalClient, taskQueue, temporalUIURL, temporalNamespace, sessionJWTSecret)); err != nil {
 		log.Fatal(err)
 	}
 }

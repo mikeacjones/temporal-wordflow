@@ -16,6 +16,7 @@ type LevelStatus string
 
 const (
 	LevelLocked    LevelStatus = "locked"
+	LevelUnlocked  LevelStatus = "unlocked"
 	LevelAvailable LevelStatus = "available"
 	LevelActive    LevelStatus = "active"
 	LevelComplete  LevelStatus = "complete"

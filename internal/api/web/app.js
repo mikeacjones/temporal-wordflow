@@ -30,6 +30,7 @@ async function api(path, options = {}) {
 }
 
 async function openSession() {
+  showCampaignLoadingScreen();
   let session;
   try {
     session = await api("/api/session");
@@ -47,7 +48,14 @@ async function openSession() {
 async function authenticate(path, form) {
   const input = Object.fromEntries(new FormData(form));
   input.requestId = requestID();
-  const session = await api(path, { method: "POST", body: JSON.stringify(input) });
+  showCampaignLoadingScreen();
+  let session;
+  try {
+    session = await api(path, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    showAuthentication();
+    throw error;
+  }
   player = session.player;
   form.reset();
   await showPlayer(session.catalog, session.game);
@@ -73,6 +81,16 @@ function showAuthentication() {
   elements["player-name"].hidden = true;
   elements["player-workflow"].hidden = true;
   elements.logout.hidden = true;
+}
+
+function showCampaignLoadingScreen() {
+  elements.auth.hidden = true;
+  elements.stats.hidden = true;
+  elements["point-shop"].hidden = true;
+  elements.game.hidden = true;
+  elements.complete.hidden = true;
+  elements.catalog.hidden = false;
+  renderCampaignLoading();
 }
 
 async function showPlayer(initialCatalog, initialGame) {
@@ -118,8 +136,18 @@ async function showCatalog(initialCatalog) {
   elements.game.hidden = true;
   elements.complete.hidden = true;
   elements.catalog.hidden = false;
+  if (!initialCatalog) renderCampaignLoading();
   catalog = initialCatalog || await api("/api/catalog");
   renderCatalog();
+}
+
+function renderCampaignLoading() {
+  elements.campaigns.innerHTML = `
+    <div class="campaign-loading" role="status" aria-live="polite">
+      <span class="campaign-loading-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <strong>Loading campaigns</strong>
+      <small>Reading durable state…</small>
+    </div>`;
 }
 
 function renderCatalog() {
@@ -175,6 +203,7 @@ function renderCampaign(campaign) {
     const item = document.createElement("span");
     item.className = `campaign-level ${level.status}`;
     item.title = `Level ${level.level}: ${level.title} · ${level.status}`;
+    item.dataset.level = level.level;
     item.textContent = level.level;
     return item;
   }));
@@ -233,6 +262,12 @@ function startCampaignTicker() {
         button.classList.remove("quiet");
         button.classList.add("primary");
         button.textContent = `Start level ${button.dataset.level}`;
+        const level = button.closest(".campaign-card")?.querySelector(`[data-level="${button.dataset.level}"]`);
+        if (level) {
+          level.classList.remove("locked", "unlocked");
+          level.classList.add("available");
+          level.title = level.title.replace(/ · [^·]+$/, " · available");
+        }
         return;
       }
       countdown.textContent = formatUnlockCountdown(remaining);

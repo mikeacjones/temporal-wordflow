@@ -9,8 +9,8 @@ Players sign up with a username, display name, and password. The normalized
 username becomes the human-readable entity ID in `player/{username}` and
 `wordflow-level/{username}/{campaign}/{level}`. Before calling Temporal, the API derives a stable
 PBKDF2-SHA256 password hash using a username-derived salt. The browser keeps the
-username and a session token in an HTTP-only cookie; the Player Workflow stores
-only the password hash and session-token hashes.
+API-signed JWT in an HTTP-only cookie. The Player Workflow stores the password
+hash, while the stateless API verifies the JWT before calling Temporal.
 
 The public display name receives a stable eight-character discriminator derived
 from that unique username, such as `Michael#8f3a1c2d`. The tagged value is stored
@@ -22,11 +22,11 @@ on first registration and used by the leaderboard.
 | --- | --- | --- |
 | `CatalogWorkflow` | Registered games and references to their campaign Workflows | Singleton entity; Continue-As-New keeps history bounded |
 | `WordflowCampaignWorkflow` | One campaign's levels, unlock schedule, prerequisites, availability dates, and expiration timer | One long-lived entity per campaign |
-| `PlayerWorkflow` | Password hash, hashed sessions, display name, campaign progress, points, rewards, streaks, and the active level reference | Long-lived entity; Continue-As-New keeps history bounded |
+| `PlayerWorkflow` | Password hash, display name, campaign progress, points, rewards, streaks, and the active level reference | Long-lived entity; Continue-As-New keeps history bounded |
 | `WordflowLevelWorkflow` | One player's level answers, guesses, revealed cells, shuffles, hints, timing, scoring, and completion | Runs until the level is solved; can Continue-As-New after heavy use |
 | `LeaderboardWorkflow` | The top 100 absolute lifetime-point snapshots | Singleton entity; Continue-As-New keeps history bounded |
-| HTTP API | Nothing durable; translates HTTP requests into Updates and Queries | Stateless |
-| Browser | Only the username/session-token cookie and letters currently selected on screen | Local session convenience |
+| HTTP API | Nothing durable; verifies signed session JWTs and translates HTTP requests into Updates and Queries | Stateless |
+| Browser | Only the HTTP-only session JWT and letters currently selected on screen | Local session convenience |
 
 All mutations use Workflow Updates because the UI needs an accepted result.
 Queries rebuild screens without changing state. HTTP request IDs are passed as
@@ -45,11 +45,14 @@ decisions and returns an immutable Wordflow level definition. The Player starts
 The child returns only a small game-independent level result. The Player does
 not Continue-As-New while that child is open.
 
-Registration sends `open-session` through Update-with-Start to
+Registration sends an authentication Update through Update-with-Start to
 `player/{username}`. The first accepted Update claims that username; later calls
 must supply the same password hash and return the current `PlayerView`. Login
 uses the same Update against an existing Workflow without Update-with-Start, so
 an unknown username returns `account does not exist` and cannot reserve a name.
+After that credential check, the API issues a 30-day HMAC-signed JWT. Normal
+requests validate it entirely in the API and query player state only when the
+endpoint actually needs that state.
 
 After a completed level updates Player state, a small Activity uses
 Signal-With-Start to publish an absolute score snapshot to `leaderboard/global`.
@@ -162,6 +165,10 @@ make worker
 make server
 ```
 
+The `server` target supplies a local-only `SESSION_JWT_SECRET`. Set that
+environment variable to a private value of at least 32 characters for any
+other deployment; every API replica must use the same value.
+
 Then open <http://localhost:8080>. The Temporal UI is at
 <http://localhost:8233>. The standalone event leaderboard is at
 <http://localhost:8080/leaderboard>.
@@ -232,6 +239,9 @@ AWS account and Region selected by the active AWS CLI configuration:
 - CloudWatch log groups; and
 - a Secrets Manager secret containing the Temporal Cloud API key.
 
+Terraform also generates a stable JWT signing secret and supplies it only to
+the API Lambda.
+
 The secret value enters Terraform through an ephemeral variable. Terraform
 writes it directly to Secrets Manager but never stores it in the plan or state.
 The Lambdas receive only the secret ID and resolve the credential at cold start.
@@ -259,9 +269,10 @@ current. Older Lambda and Worker Deployment Versions remain available for
 Workflows pinned to their original code. To rotate the Temporal key, supply the
 new value and increment `temporal_api_key_revision`.
 
-The web/API Lambda owns no application state. It keeps only a reusable Temporal
-client during a warm invocation; all accounts, sessions, campaigns, levels,
-scores, points, and leaderboard data remain in Temporal Cloud.
+The web/API Lambda owns no application state. It keeps only its JWT signing
+secret and a reusable Temporal client during a warm invocation; all durable
+accounts, campaigns, levels, scores, points, and leaderboard data remain in
+Temporal Cloud.
 
 Workflow links in the web app default to the local Temporal UI at
 `http://localhost:8233`. Set `TEMPORAL_WEB_UI_URL=https://cloud.temporal.io`
@@ -272,8 +283,8 @@ segment used by Temporal Cloud differs.
 ## Identity model
 
 Signup is local to the application: the unique `player/{username}` Workflow ID
-is the username claim, while the Player Workflow owns the password hash and
-sessions. Raw passwords never enter Workflow history. This deliberately small
+is the username claim, while the Player Workflow owns the password hash and the
+API signs and verifies session JWTs. Raw passwords never enter Workflow history. This deliberately small
 authentication model is suitable for the demo; its deterministic password hash
 is still vulnerable to offline guessing if Workflow data is exposed, and it
 does not attempt email verification, account recovery, MFA, or distributed

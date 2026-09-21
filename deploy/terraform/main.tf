@@ -50,6 +50,11 @@ resource "terraform_data" "build" {
 
 resource "random_uuid" "temporal_external_id" {}
 
+resource "random_password" "session_jwt_secret" {
+  length  = 64
+  special = false
+}
+
 resource "aws_secretsmanager_secret" "temporal_api_key" {
   name                    = "${var.project_name}/temporal-api-key"
   description             = "Temporal Cloud API key for ${var.temporal_namespace}"
@@ -164,6 +169,7 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
+      SESSION_JWT_SECRET         = random_password.session_jwt_secret.result
       TEMPORAL_ADDRESS           = var.temporal_address
       TEMPORAL_API_KEY_SECRET_ID = aws_secretsmanager_secret.temporal_api_key.id
       TEMPORAL_NAMESPACE         = var.temporal_namespace

@@ -1,5 +1,7 @@
 .PHONY: test vet workflowcheck temporal worker server lambda lambda-api terraform-init terraform-plan terraform-apply clean
 
+SESSION_JWT_SECRET ?= local-temporal-wordflow-jwt-secret-change-before-deploying
+
 test:
 	go test ./...
 
@@ -17,7 +19,7 @@ worker:
 	go run ./cmd/worker
 
 server:
-	go run ./cmd/server
+	SESSION_JWT_SECRET=$(SESSION_JWT_SECRET) go run ./cmd/server
 
 LAMBDA_ARCH ?= arm64
 lambda:

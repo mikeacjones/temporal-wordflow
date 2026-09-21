@@ -3,6 +3,7 @@ package api
 import (
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -34,20 +35,20 @@ func TestDisplayNameGetsStableUsernameDiscriminator(t *testing.T) {
 	require.NotEqual(t, name, taggedDisplayName("another-user", "Michael"))
 }
 
-func TestSessionTokenIsStableForRequestRetry(t *testing.T) {
-	raw, hash := sessionToken("password-hash", "request-id")
-	retriedRaw, retriedHash := sessionToken("password-hash", "request-id")
-	otherRaw, _ := sessionToken("password-hash", "other-request")
-	require.Equal(t, raw, retriedRaw)
-	require.Equal(t, hash, retriedHash)
-	require.NotEqual(t, raw, otherRaw)
-}
+func TestSessionCookieVerifiesSignedJWT(t *testing.T) {
+	secret := []byte("a-test-session-secret-with-at-least-32-characters")
+	now := time.Date(2026, time.September, 21, 12, 0, 0, 0, time.UTC)
+	token, err := newSessionToken(secret, "mjones", now, now.Add(time.Hour))
+	require.NoError(t, err)
 
-func TestSessionCookieAcceptsNormalizedUsername(t *testing.T) {
 	request := httptest.NewRequest("GET", "/", nil)
-	request.Header.Set("Cookie", "wordflow_session=mjones.token")
-	username, token, err := sessionCookie(request)
+	request.Header.Set("Cookie", "wordflow_session="+token)
+	username, err := sessionCookie(request, secret, now)
 	require.NoError(t, err)
 	require.Equal(t, "mjones", username)
-	require.Equal(t, "token", token)
+
+	_, err = sessionCookie(request, []byte("another-test-session-secret-at-least-32-characters"), now)
+	require.ErrorContains(t, err, "invalid session")
+	_, err = sessionCookie(request, secret, now.Add(time.Hour))
+	require.ErrorContains(t, err, "invalid session")
 }

@@ -34,43 +34,36 @@ func waitingWordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkf
 	}, nil
 }
 
-func TestOpenSessionClaimsUsernameAndAuthenticatesExistingPlayer(t *testing.T) {
+func TestAuthenticationClaimsUsernameAndValidatesExistingPlayer(t *testing.T) {
 	suite := testsuite.WorkflowTestSuite{}
 	env := suite.NewTestWorkflowEnvironment()
-	expiresAt := time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)
 	state := &PlayerState{PlayerID: "alice"}
 	var registered, loggedIn game.PlayerView
 
 	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow(UpdateOpenSession, "register", &testsuite.TestUpdateCallback{
+		env.UpdateWorkflow(UpdateAuthenticatePlayer, "register", &testsuite.TestUpdateCallback{
 			OnComplete: func(result any, err error) {
 				require.NoError(t, err)
 				registered = result.(game.PlayerView)
 			},
-		}, OpenSessionInput{
-			DisplayName: "Alice", PasswordHash: "correct",
-			TokenHash: "first", ExpiresAt: expiresAt, Register: true,
+		}, AuthenticatePlayerInput{
+			DisplayName: "Alice", PasswordHash: "correct", Register: true,
 		})
 	}, time.Millisecond)
 	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow(UpdateOpenSession, "wrong-password", &testsuite.TestUpdateCallback{
+		env.UpdateWorkflow(UpdateAuthenticatePlayer, "wrong-password", &testsuite.TestUpdateCallback{
 			OnComplete: func(_ any, err error) { require.Error(t, err) },
-		}, OpenSessionInput{PasswordHash: "wrong", TokenHash: "rejected", ExpiresAt: expiresAt})
+		}, AuthenticatePlayerInput{PasswordHash: "wrong"})
 	}, 2*time.Millisecond)
 	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow(UpdateOpenSession, "login", &testsuite.TestUpdateCallback{
+		env.SetContinueAsNewSuggested(true)
+		env.UpdateWorkflow(UpdateAuthenticatePlayer, "login", &testsuite.TestUpdateCallback{
 			OnComplete: func(result any, err error) {
 				require.NoError(t, err)
 				loggedIn = result.(game.PlayerView)
 			},
-		}, OpenSessionInput{PasswordHash: "correct", TokenHash: "second", ExpiresAt: expiresAt})
+		}, AuthenticatePlayerInput{PasswordHash: "correct"})
 	}, 3*time.Millisecond)
-	env.RegisterDelayedCallback(func() {
-		env.SetContinueAsNewSuggested(true)
-		env.UpdateWorkflow(UpdateResumeSession, "roll-over", &testsuite.TestUpdateCallback{
-			OnComplete: func(_ any, err error) { require.NoError(t, err) },
-		}, ResumeSessionInput{TokenHash: "second"})
-	}, 4*time.Millisecond)
 
 	env.ExecuteWorkflow(PlayerWorkflow, PlayerWorkflowInput{State: state})
 
@@ -82,40 +75,11 @@ func TestOpenSessionClaimsUsernameAndAuthenticatesExistingPlayer(t *testing.T) {
 	var nextRun PlayerWorkflowInput
 	require.NoError(t, converter.GetDefaultDataConverter().FromPayloads(continueAsNew.Input, &nextRun))
 	require.Equal(t, "correct", nextRun.State.PasswordHash)
-	require.Equal(t, []PlayerSession{
-		{TokenHash: "first", ExpiresAt: expiresAt},
-		{TokenHash: "second", ExpiresAt: expiresAt},
-	}, nextRun.State.Sessions)
 }
 
 func TestLoginCannotClaimMissingPlayer(t *testing.T) {
-	err := validateOpenSession(&PlayerState{}, OpenSessionInput{
-		PasswordHash: "hash", TokenHash: "token", ExpiresAt: time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
-	}, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	err := validateCredentials(&PlayerState{}, AuthenticatePlayerInput{PasswordHash: "hash"})
 	require.ErrorContains(t, err, "account does not exist")
-}
-
-func TestPlayerSessionQueryReturnsTheAuthenticatedPlayer(t *testing.T) {
-	env := (&testsuite.WorkflowTestSuite{}).NewTestWorkflowEnvironment()
-	state := &PlayerState{
-		PlayerID: "alice", DisplayName: "Alice", Points: 75,
-		Sessions: []PlayerSession{{
-			TokenHash: "session", ExpiresAt: time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC),
-		}},
-	}
-	var view game.PlayerView
-	env.RegisterDelayedCallback(func() {
-		result, err := env.QueryWorkflow(QueryPlayerSession, "session")
-		require.NoError(t, err)
-		require.NoError(t, result.Get(&view))
-		env.CancelWorkflow()
-	}, time.Millisecond)
-
-	env.ExecuteWorkflow(PlayerWorkflow, PlayerWorkflowInput{State: state})
-
-	require.Equal(t, "alice", view.PlayerID)
-	require.Equal(t, "Alice", view.DisplayName)
-	require.Equal(t, 75, view.Points)
 }
 
 func TestPlayerRemainsResponsiveWhileLevelChildRuns(t *testing.T) {
@@ -131,10 +95,7 @@ func TestPlayerRemainsResponsiveWhileLevelChildRuns(t *testing.T) {
 	}, nil).Once()
 
 	gameID := WordflowLevelWorkflowID("player", "temporal-foundations", 1)
-	state := &PlayerState{
-		PlayerID: "player", Points: 25,
-		Sessions: []PlayerSession{{TokenHash: "session", ExpiresAt: time.Date(2100, 1, 1, 0, 0, 0, 0, time.UTC)}},
-	}
+	state := &PlayerState{PlayerID: "player", Points: 25}
 	var sessionView game.PlayerView
 	var spendResult SpendPointsResult
 
@@ -144,15 +105,12 @@ func TestPlayerRemainsResponsiveWhileLevelChildRuns(t *testing.T) {
 		}, StartLevelInput{CampaignID: "temporal-foundations", Level: 1})
 	}, time.Millisecond)
 	env.RegisterDelayedCallback(func() {
-		env.SetContinueAsNewSuggested(true)
-		env.UpdateWorkflow(UpdateResumeSession, "resume", &testsuite.TestUpdateCallback{
-			OnComplete: func(result any, err error) {
-				require.NoError(t, err)
-				sessionView = result.(game.PlayerView)
-			},
-		}, ResumeSessionInput{TokenHash: "session"})
+		result, err := env.QueryWorkflow(QueryPlayerState)
+		require.NoError(t, err)
+		require.NoError(t, result.Get(&sessionView))
 	}, 2*time.Millisecond)
 	env.RegisterDelayedCallback(func() {
+		env.SetContinueAsNewSuggested(true)
 		env.UpdateWorkflow(UpdateSpendPoints, "spend", &testsuite.TestUpdateCallback{
 			OnComplete: func(result any, err error) {
 				require.NoError(t, err)
