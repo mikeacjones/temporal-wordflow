@@ -136,6 +136,37 @@ func TestPlayerRemainsResponsiveWhileLevelChildRuns(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
+func TestPlayerCannotStartLevelRejectedByCampaign(t *testing.T) {
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(testResolveWordflowLevelActivity, activity.RegisterOptions{Name: ActivityResolveWordflowLevel})
+	env.OnActivity(ActivityResolveWordflowLevel, mock.Anything, mock.Anything).Return(WordflowLevelResolution{
+		CampaignID: "daily", Reason: "This campaign has ended.", ErrorType: "campaign_locked",
+	}, nil).Once()
+
+	state := &PlayerState{PlayerID: "player"}
+	var updateErr error
+	var view game.PlayerView
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow(UpdateStartLevel, "start-ended-campaign", &testsuite.TestUpdateCallback{
+			OnComplete: func(_ any, err error) { updateErr = err },
+		}, StartLevelInput{CampaignID: "daily", Level: 3})
+	}, time.Millisecond)
+	env.RegisterDelayedCallback(func() {
+		result, err := env.QueryWorkflow(QueryPlayerState)
+		require.NoError(t, err)
+		require.NoError(t, result.Get(&view))
+		env.CancelWorkflow()
+	}, 2*time.Millisecond)
+
+	env.ExecuteWorkflow(PlayerWorkflow, PlayerWorkflowInput{State: state})
+
+	require.ErrorContains(t, updateErr, "This campaign has ended.")
+	require.Nil(t, view.ActiveGame)
+	require.Empty(t, view.Campaigns)
+	env.AssertExpectations(t)
+}
+
 func TestCompletionAdvancesCampaignAndAwardsConfiguredPoints(t *testing.T) {
 	completedAt := time.Date(2026, time.September, 18, 12, 0, 0, 0, time.UTC)
 	state := &PlayerState{

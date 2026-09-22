@@ -57,17 +57,22 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 	}
 
 	if err := workflow.SetQueryHandler(ctx, QueryCampaignSummary, func() (campaign.Summary, error) {
-		return wordflowCampaignSummary(ctx, state), nil
+		// Query results are not recorded in Workflow history, so they can reflect
+		// wall time as long as the value never mutates durable Workflow state.
+		now := time.Now().UTC() //workflowcheck:ignore
+		return wordflowCampaignSummary(ctx, state, now), nil
 	}); err != nil {
 		return err
 	}
 	if err := workflow.SetQueryHandler(ctx, QueryCampaignView, func(input campaign.QueryInput) (campaign.View, error) {
-		return wordflowCampaignView(ctx, state, input.Player), nil
+		now := time.Now().UTC() //workflowcheck:ignore
+		return wordflowCampaignView(ctx, state, input.Player, now), nil
 	}); err != nil {
 		return err
 	}
 	if err := workflow.SetQueryHandler(ctx, QueryWordflowLevel, func(input WordflowLevelQuery) (WordflowLevelResolution, error) {
-		return resolveWordflowLevel(ctx, state, input), nil
+		now := time.Now().UTC() //workflowcheck:ignore
+		return resolveWordflowLevel(ctx, state, input, now), nil
 	}); err != nil {
 		return err
 	}
@@ -120,7 +125,7 @@ func validateWordflowCampaignLevels(levels []game.Puzzle) error {
 	return nil
 }
 
-func wordflowCampaignSummary(ctx workflow.Context, state *WordflowCampaignState) campaign.Summary {
+func wordflowCampaignSummary(ctx workflow.Context, state *WordflowCampaignState, now time.Time) campaign.Summary {
 	return campaign.Summary{
 		CampaignID:  state.Definition.ID,
 		Kind:        state.Definition.Kind,
@@ -128,16 +133,15 @@ func wordflowCampaignSummary(ctx workflow.Context, state *WordflowCampaignState)
 		Game:        state.Definition.Game,
 		Title:       state.Definition.Title,
 		Description: state.Definition.Description,
-		Status:      wordflowCampaignStatus(state.Definition, workflow.Now(ctx)),
+		Status:      wordflowCampaignStatus(state.Definition, now),
 		StartsAt:    state.Definition.StartsAt,
 		EndsAt:      state.Definition.EndsAt,
 		TotalLevels: len(state.Levels),
 	}
 }
 
-func wordflowCampaignView(ctx workflow.Context, state *WordflowCampaignState, player campaign.PlayerProgress) campaign.View {
-	now := workflow.Now(ctx)
-	summary := wordflowCampaignSummary(ctx, state)
+func wordflowCampaignView(ctx workflow.Context, state *WordflowCampaignState, player campaign.PlayerProgress, now time.Time) campaign.View {
+	summary := wordflowCampaignSummary(ctx, state, now)
 	progress := findPlayerCampaign(player.Campaigns, state.Definition.ID)
 	joinedAt := now
 	nextLevel := 1
@@ -184,8 +188,8 @@ func wordflowCampaignView(ctx workflow.Context, state *WordflowCampaignState, pl
 	}
 }
 
-func resolveWordflowLevel(ctx workflow.Context, state *WordflowCampaignState, input WordflowLevelQuery) WordflowLevelResolution {
-	view := wordflowCampaignView(ctx, state, input.Player)
+func resolveWordflowLevel(ctx workflow.Context, state *WordflowCampaignState, input WordflowLevelQuery, now time.Time) WordflowLevelResolution {
+	view := wordflowCampaignView(ctx, state, input.Player, now)
 	resolution := WordflowLevelResolution{
 		CampaignID:  state.Definition.ID,
 		TotalLevels: len(state.Levels),

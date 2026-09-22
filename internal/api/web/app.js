@@ -7,6 +7,7 @@ let completionAction;
 let noticeTimer;
 let speedBonusTimer;
 let campaignTimer;
+const refreshedCampaignBoundaries = new Set();
 let levelDeadlineTimer;
 let deadlineRefresh;
 
@@ -398,6 +399,10 @@ function startCampaignTicker() {
     for (const countdown of countdowns) {
       const remaining = Date.parse(countdown.dataset.countdownAt) - Date.now();
       if (remaining <= 0) {
+        const boundary = countdown.dataset.countdownAt;
+        countdown.textContent = "now";
+        if (refreshedCampaignBoundaries.has(boundary)) continue;
+        refreshedCampaignBoundaries.add(boundary);
         stopCampaignTicker();
         showCatalog().catch(showError);
         return false;

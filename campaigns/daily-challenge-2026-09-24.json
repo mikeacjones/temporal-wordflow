@@ -1,0 +1,46 @@
+{
+  "id": "daily-challenge-2026-09-24",
+  "kind": "daily-challenge",
+  "singleAttempt": true,
+  "title": "Daily Challenge · September 24",
+  "description": "Three especially difficult sequential levels with a single attempt, 180-second time pressure, richer 20-point rewards, and premium hints priced at 15/30/45 points, active 2026-09-24 00:00 EDT to 2026-09-25 00:00 EDT.",
+  "game": {
+    "id": "wordflow",
+    "title": "Wordflow",
+    "description": "Resolve connected words from a shared letter queue."
+  },
+  "startsAt": "2026-09-24T00:00:00-04:00",
+  "endsAt": "2026-09-25T00:00:00-04:00",
+  "unlock": {
+    "initialLevels": 3,
+    "levelsPerInterval": 0,
+    "intervalHours": 0
+  },
+  "requirements": {},
+  "levels": [
+    {
+      "title": "Cipher Sprint",
+      "letters": "SECURITY",
+      "words": ["SECURITY", "SUITE", "TRUCE", "TIER", "TIRE", "RITE", "CURE", "SITE", "CURT", "CRY"],
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    },
+    {
+      "title": "Barnstorm",
+      "letters": "PASTORAL",
+      "words": ["PASTORAL", "PASTA", "ALTAR", "SOLAR", "SALT", "SOAP", "TRAP", "ALSO", "SORT", "ORAL"],
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    },
+    {
+      "title": "Brain Burn",
+      "letters": "NOTEBOOK",
+      "words": ["NOTEBOOK", "TOKEN", "BOOK", "NOTE", "BONE", "TOOK", "TONE", "KNOT", "BENT", "KNOB"],
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    }
+  ]
+}

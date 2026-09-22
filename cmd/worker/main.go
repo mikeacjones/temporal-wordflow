@@ -39,6 +39,7 @@ func main() {
 	temporalWorker := worker.New(temporalClient, taskQueue, workerOptions)
 	workflows.Register(temporalWorker, buildID != "")
 	temporalWorker.RegisterActivity(&activities.Campaigns{Temporal: temporalClient, TaskQueue: taskQueue})
+	temporalWorker.RegisterActivity(&activities.DailyChallenges{})
 	temporalWorker.RegisterActivity(&activities.Points{Temporal: temporalClient})
 	temporalWorker.RegisterActivity(&activities.Leaderboard{Temporal: temporalClient, TaskQueue: taskQueue})
 	if err := temporalWorker.Run(worker.InterruptCh()); err != nil {

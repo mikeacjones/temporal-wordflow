@@ -1,0 +1,46 @@
+{
+  "id": "daily-challenge-2026-09-25",
+  "kind": "daily-challenge",
+  "singleAttempt": true,
+  "title": "Daily Challenge · September 25",
+  "description": "Three especially difficult sequential levels with one attempt only, each under 180-second pressure for richer 20-point rewards, while premium hints cost more.",
+  "game": {
+    "id": "wordflow",
+    "title": "Wordflow",
+    "description": "Resolve connected words from a shared letter queue."
+  },
+  "startsAt": "2026-09-25T00:00:00-04:00",
+  "endsAt": "2026-09-26T00:00:00-04:00",
+  "unlock": {
+    "initialLevels": 3,
+    "levelsPerInterval": 0,
+    "intervalHours": 0
+  },
+  "requirements": {},
+  "levels": [
+    {
+      "title": "Nerve Sprint",
+      "letters": "SALTIERN",
+      "words": ["ENTRAILS", "RAISE", "SNARE", "LATE", "LIAR", "TAIL", "LINE", "LENS", "STIR", "RAIN"],
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    },
+    {
+      "title": "Sharp Ascent",
+      "letters": "MIGRATED",
+      "words": ["MIGRATED", "GRADE", "GRIME", "TIGER", "DREAM", "TRIM", "GAME", "RAGE", "TIDE", "MEAT"],
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    },
+    {
+      "title": "Flash Burn",
+      "letters": "CAMPFIRE",
+      "words": ["CAMPFIRE", "CRIME", "FRAME", "PRIME", "FIRM", "RACE", "PAIR", "CAMP", "FIRE", "RIPE"],
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    }
+  ]
+}

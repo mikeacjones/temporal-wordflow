@@ -1,0 +1,46 @@
+{
+  "id": "daily-challenge-2026-09-23",
+  "kind": "daily-challenge",
+  "singleAttempt": true,
+  "title": "Daily Challenge · September 23",
+  "description": "Three especially tough levels with a 180-second clock, richer 20-point rewards, premium 15/30/45-point hints, and one single attempt for the full sequential campaign during 2026-09-23 only.",
+  "game": {
+    "id": "wordflow",
+    "title": "Wordflow",
+    "description": "Resolve connected words from a shared letter queue."
+  },
+  "startsAt": "2026-09-23T00:00:00-04:00",
+  "endsAt": "2026-09-24T00:00:00-04:00",
+  "unlock": {
+    "initialLevels": 3,
+    "levelsPerInterval": 0,
+    "intervalHours": 0
+  },
+  "requirements": {},
+  "levels": [
+    {
+      "title": "Buried Rush",
+      "letters": "TREASURE",
+      "words": ["TREASURE", "STARE", "ERASE", "EATER", "RUST", "SURE", "SEAT", "TRUE", "EAST", "USER"],
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    },
+    {
+      "title": "Edge Sprint",
+      "letters": "PLATFORM",
+      "words": ["PLATFORM", "FORM", "FROM", "PORT", "TRAM", "PLOT", "MALT", "TARP", "RAMP", "FOAM"],
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    },
+    {
+      "title": "Bright Crunch",
+      "letters": "SUNLIGHT",
+      "words": ["SUNLIGHT", "LIGHT", "NIGHT", "THING", "HUNT", "SING", "THIN", "HINT", "LUSH", "GUST"],
+      "timeLimitSeconds": 180,
+      "basePoints": 20,
+      "hintPrices": {"letter": 15, "brush": 30, "word": 45}
+    }
+  ]
+}

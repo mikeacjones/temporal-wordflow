@@ -79,6 +79,58 @@ func TestWordflowCampaignExposesTheCommonCampaignQueries(t *testing.T) {
 	env.AssertExpectations(t)
 }
 
+func TestWordflowCampaignQueriesUseWallClock(t *testing.T) {
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(testRegisterCampaignActivity, activity.RegisterOptions{Name: ActivityRegisterCampaign})
+	env.OnActivity(ActivityRegisterCampaign, mock.Anything, mock.Anything).Return(nil).Once()
+
+	wallNow := time.Now().UTC()
+	env.SetStartTime(wallNow.Add(-48 * time.Hour))
+	startsAt := wallNow.Add(-time.Hour)
+	endsAt := wallNow.Add(time.Hour)
+	joinedAt := wallNow.Add(-25 * time.Hour)
+	levels := []game.Puzzle{
+		{Level: 1, Title: "One"},
+		{Level: 2, Title: "Two"},
+	}
+	definition := campaign.Definition{
+		ID: "wall-clock", Game: campaign.GameSummary{ID: campaign.GameWordflow},
+		StartsAt: &startsAt, EndsAt: &endsAt,
+		Unlock: campaign.UnlockPolicy{InitialLevels: 1, LevelsPerInterval: 1, Interval: 24 * time.Hour},
+	}
+	player := campaign.PlayerProgress{Campaigns: []campaign.PlayerCampaignProgress{{
+		CampaignID: definition.ID, JoinedAt: joinedAt, NextLevel: 2, CompletedLevels: 1,
+	}}}
+
+	var summary campaign.Summary
+	var view campaign.View
+	var resolution WordflowLevelResolution
+	env.RegisterDelayedCallback(func() {
+		result, err := env.QueryWorkflow(QueryCampaignSummary)
+		require.NoError(t, err)
+		require.NoError(t, result.Get(&summary))
+
+		result, err = env.QueryWorkflow(QueryCampaignView, campaign.QueryInput{Player: player})
+		require.NoError(t, err)
+		require.NoError(t, result.Get(&view))
+
+		result, err = env.QueryWorkflow(QueryWordflowLevel, WordflowLevelQuery{Player: player, Level: 2})
+		require.NoError(t, err)
+		require.NoError(t, result.Get(&resolution))
+		env.CancelWorkflow()
+	}, time.Millisecond)
+
+	env.ExecuteWorkflow(WordflowCampaignWorkflow, WordflowCampaignWorkflowInput{
+		Definition: definition, Levels: levels,
+	})
+
+	require.Equal(t, campaign.StatusActive, summary.Status)
+	require.Equal(t, campaign.LevelAvailable, view.Levels[1].Status)
+	require.True(t, resolution.Allowed)
+	env.AssertExpectations(t)
+}
+
 func TestCampaignRequirementsAndEnrollmentUnlockSchedule(t *testing.T) {
 	now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
 	definition := campaign.Definition{

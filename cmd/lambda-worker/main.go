@@ -35,6 +35,7 @@ func main() {
 			ClientOptions: options.ClientOptions,
 			TaskQueue:     options.TaskQueue,
 		})
+		options.RegisterActivity(&activities.DailyChallenges{})
 		options.RegisterActivity(&activities.Points{ClientOptions: options.ClientOptions})
 		options.RegisterActivity(&activities.Leaderboard{
 			ClientOptions: options.ClientOptions,
