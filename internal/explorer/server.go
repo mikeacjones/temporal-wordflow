@@ -107,13 +107,21 @@ type pendingSummary struct {
 }
 
 type eventView struct {
-	ID       int64          `json:"id"`
-	Time     *time.Time     `json:"time,omitempty"`
-	Type     string         `json:"type"`
-	Category string         `json:"category"`
-	Title    string         `json:"title"`
-	Detail   string         `json:"detail,omitempty"`
-	Details  map[string]any `json:"details"`
+	ID            int64              `json:"id"`
+	Time          *time.Time         `json:"time,omitempty"`
+	Type          string             `json:"type"`
+	Category      string             `json:"category"`
+	Title         string             `json:"title"`
+	Detail        string             `json:"detail,omitempty"`
+	Details       map[string]any     `json:"details"`
+	ChildWorkflow *workflowReference `json:"childWorkflow,omitempty"`
+}
+
+type workflowReference struct {
+	WorkflowID string `json:"workflowId"`
+	RunID      string `json:"runId"`
+	Type       string `json:"type"`
+	Kind       string `json:"kind"`
 }
 
 func New(temporalClient client.Client, namespace string, authenticate func(*http.Request) (string, error)) http.Handler {
@@ -227,7 +235,12 @@ func (s *Server) getWorkflow(writer http.ResponseWriter, request *http.Request) 
 	if history.GetHistory() != nil {
 		events = make([]eventView, 0, len(history.GetHistory().GetEvents()))
 		for _, event := range history.GetHistory().GetEvents() {
-			events = append(events, sanitizeEvent(event, workflowVisibility(workflowID) == "public"))
+			view := sanitizeEvent(event, workflowVisibility(workflowID) == "public")
+			if child, status := childWorkflowReference(event); child != nil &&
+				canViewWorkflow(currentViewer.PlayerID, child.WorkflowID, status) {
+				view.ChildWorkflow = child
+			}
+			events = append(events, view)
 		}
 	}
 	writeJSON(writer, http.StatusOK, workflowDetailResponse{

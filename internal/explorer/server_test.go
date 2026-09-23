@@ -235,6 +235,57 @@ func TestHistoryPayloadsAreSanitizedBeforeSerialization(t *testing.T) {
 	require.Equal(t, runID, reader.historyRequest.GetExecution().GetRunId())
 }
 
+func TestChildWorkflowEventLinksToVisibleChildHistory(t *testing.T) {
+	parentID := workflows.PlayerWorkflowID("alice")
+	childID := workflows.WordflowLevelWorkflowID("alice", "campaign", 1)
+	reader := &fakeReader{
+		description: &workflowservicepb.DescribeWorkflowExecutionResponse{
+			WorkflowExecutionInfo: executionInfo(parentID, workflows.PlayerWorkflowName),
+		},
+		historyResponse: &workflowservicepb.GetWorkflowExecutionHistoryResponse{History: &historypb.History{
+			Events: []*historypb.HistoryEvent{childWorkflowStartedEvent(childID, "child-run")},
+		}},
+	}
+	handler := newHandler(reader, func(*http.Request) (string, error) { return "alice", nil })
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/api/workflow?workflowId="+url.QueryEscape(parentID), nil)
+
+	handler.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	var detail workflowDetailResponse
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &detail))
+	require.Len(t, detail.Events, 1)
+	require.Equal(t, &workflowReference{
+		WorkflowID: childID,
+		RunID:      "child-run",
+		Type:       workflows.WordflowLevelWorkflowName,
+		Kind:       "level",
+	}, detail.Events[0].ChildWorkflow)
+}
+
+func TestPublicHistoryDoesNotLinkToPrivateChild(t *testing.T) {
+	parentID := workflows.WordflowCampaignWorkflowID("public")
+	childID := workflows.WordflowLevelWorkflowID("alice", "campaign", 1)
+	reader := &fakeReader{
+		description: &workflowservicepb.DescribeWorkflowExecutionResponse{
+			WorkflowExecutionInfo: executionInfo(parentID, workflows.WordflowCampaignWorkflowName),
+		},
+		historyResponse: &workflowservicepb.GetWorkflowExecutionHistoryResponse{History: &historypb.History{
+			Events: []*historypb.HistoryEvent{childWorkflowStartedEvent(childID, "private-run")},
+		}},
+	}
+	handler := newHandler(reader, func(*http.Request) (string, error) { return "", errors.New("not signed in") })
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/api/workflow?workflowId="+url.QueryEscape(parentID), nil)
+
+	handler.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.NotContains(t, response.Body.String(), `"childWorkflow"`)
+	require.NotContains(t, response.Body.String(), childID)
+}
+
 func TestExplorerServesHardenedPage(t *testing.T) {
 	handler := newHandler(&fakeReader{}, func(*http.Request) (string, error) {
 		return "", errors.New("not signed in")
@@ -296,5 +347,17 @@ func executionInfo(workflowID, workflowType string) *workflowpb.WorkflowExecutio
 		HistoryLength:        3,
 		HistorySizeBytes:     128,
 		StateTransitionCount: 2,
+	}
+}
+
+func childWorkflowStartedEvent(workflowID, runID string) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
+		EventId: 1, EventType: enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED,
+		Attributes: &historypb.HistoryEvent_ChildWorkflowExecutionStartedEventAttributes{
+			ChildWorkflowExecutionStartedEventAttributes: &historypb.ChildWorkflowExecutionStartedEventAttributes{
+				WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+				WorkflowType:      &commonpb.WorkflowType{Name: workflows.WordflowLevelWorkflowName},
+			},
+		},
 	}
 }

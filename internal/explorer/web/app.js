@@ -205,7 +205,19 @@ function renderTimeline() {
     summary.append(number, copy, element("time", "event-time", formatTime(event.time)));
     const payload = element("pre", "event-payload");
     payload.textContent = JSON.stringify(event.details || {}, null, 2);
-    disclosure.append(summary, payload);
+    disclosure.append(summary);
+    if (event.childWorkflow) {
+      const childLink = element("a", "child-workflow-link", "Open child history →");
+      childLink.href = workflowHref(event.childWorkflow);
+      childLink.title = event.childWorkflow.workflowId;
+      childLink.addEventListener("click", (click) => {
+        if (click.button !== 0 || click.metaKey || click.ctrlKey || click.shiftKey || click.altKey) return;
+        click.preventDefault();
+        loadWorkflowDetail(event.childWorkflow, false);
+      });
+      disclosure.append(childLink);
+    }
+    disclosure.append(payload);
     item.append(disclosure);
     return item;
   }));
@@ -269,6 +281,12 @@ function updateExplorerURL(workflow) {
   const url = new URL(window.location.href);
   url.search = new URLSearchParams({ workflowId: workflow.workflowId, runId: workflow.runId }).toString();
   window.history.replaceState(null, "", url);
+}
+
+function workflowHref(workflow) {
+  const params = new URLSearchParams({ workflowId: workflow.workflowId });
+  if (workflow.runId) params.set("runId", workflow.runId);
+  return `?${params}`;
 }
 
 function shortID(value) { return value ? `${value.slice(0, 8)}…` : "latest"; }

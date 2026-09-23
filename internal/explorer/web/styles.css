@@ -254,6 +254,10 @@ h1 { margin-bottom: 0; font-size: clamp(3rem, 7.2vw, 7.1rem); line-height: 0.88;
 .event-copy strong { display: block; font-size: 0.84rem; }
 .event-copy code { display: block; margin-top: 4px; overflow: hidden; color: #555563; font-size: 0.72rem; text-overflow: ellipsis; white-space: nowrap; }
 .event-time { padding-top: 4px; color: var(--muted); font-size: 0.67rem; white-space: nowrap; }
+.child-workflow-link { display: inline-flex; margin: 11px 0 0 58px; padding: 7px 10px; border: 2px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--purple-soft); box-shadow: 2px 2px 0 var(--line); font-size: 0.72rem; font-weight: 800; text-decoration: none; }
+.child-workflow-link:hover { color: #fff; background: var(--purple); }
+.child-workflow-link:active { transform: translate(2px, 2px); box-shadow: none; }
+.child-workflow-link:focus-visible { outline: 3px solid rgba(77, 74, 240, 0.28); outline-offset: 3px; }
 .event-payload { margin: 11px 0 4px 58px; padding: 14px; overflow: auto; border: 2px solid #d1d1dc; border-radius: 10px; color: #e9e9f2; background: #1d1d23; font: 0.7rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .timeline-empty { padding: 35px 20px; border: 2px dashed #babac2; border-radius: 12px; color: var(--muted); text-align: center; }
 
@@ -302,6 +306,7 @@ footer { display: flex; justify-content: space-between; gap: 20px; padding: 22px
   .timeline-event::before { left: 19px; }
   .event-number { width: 40px; }
   .event-time { grid-column: 2; margin-top: -10px; padding: 0 0 6px; }
+  .child-workflow-link { margin-left: 53px; }
   .event-payload { margin-left: 53px; }
   footer { flex-direction: column; }
 }

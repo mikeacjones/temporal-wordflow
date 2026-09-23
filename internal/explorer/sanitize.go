@@ -25,6 +25,11 @@ const (
 
 var detailConverter = converter.GetDefaultDataConverter()
 
+type childWorkflowEventAttributes interface {
+	GetWorkflowExecution() *commonpb.WorkflowExecution
+	GetWorkflowType() *commonpb.WorkflowType
+}
+
 func sanitizeEvent(event *historypb.HistoryEvent, public bool) eventView {
 	eventType := cleanEnum(event.GetEventType().String(), "EVENT_TYPE_")
 	details := map[string]any{
@@ -55,6 +60,44 @@ func sanitizeEvent(event *historypb.HistoryEvent, public bool) eventView {
 		Detail:   detail,
 		Details:  details,
 	}
+}
+
+func childWorkflowReference(event *historypb.HistoryEvent) (*workflowReference, enums.WorkflowExecutionStatus) {
+	var attributes childWorkflowEventAttributes
+	status := enums.WORKFLOW_EXECUTION_STATUS_UNSPECIFIED
+	switch {
+	case event.GetChildWorkflowExecutionStartedEventAttributes() != nil:
+		attributes = event.GetChildWorkflowExecutionStartedEventAttributes()
+		status = enums.WORKFLOW_EXECUTION_STATUS_RUNNING
+	case event.GetChildWorkflowExecutionCompletedEventAttributes() != nil:
+		attributes = event.GetChildWorkflowExecutionCompletedEventAttributes()
+		status = enums.WORKFLOW_EXECUTION_STATUS_COMPLETED
+	case event.GetChildWorkflowExecutionFailedEventAttributes() != nil:
+		attributes = event.GetChildWorkflowExecutionFailedEventAttributes()
+		status = enums.WORKFLOW_EXECUTION_STATUS_FAILED
+	case event.GetChildWorkflowExecutionCanceledEventAttributes() != nil:
+		attributes = event.GetChildWorkflowExecutionCanceledEventAttributes()
+		status = enums.WORKFLOW_EXECUTION_STATUS_CANCELED
+	case event.GetChildWorkflowExecutionTimedOutEventAttributes() != nil:
+		attributes = event.GetChildWorkflowExecutionTimedOutEventAttributes()
+		status = enums.WORKFLOW_EXECUTION_STATUS_TIMED_OUT
+	case event.GetChildWorkflowExecutionTerminatedEventAttributes() != nil:
+		attributes = event.GetChildWorkflowExecutionTerminatedEventAttributes()
+		status = enums.WORKFLOW_EXECUTION_STATUS_TERMINATED
+	default:
+		return nil, status
+	}
+
+	execution := attributes.GetWorkflowExecution()
+	if execution.GetWorkflowId() == "" {
+		return nil, status
+	}
+	return &workflowReference{
+		WorkflowID: execution.GetWorkflowId(),
+		RunID:      execution.GetRunId(),
+		Type:       safeWorkflowType(attributes.GetWorkflowType().GetName()),
+		Kind:       workflowKind(execution.GetWorkflowId()),
+	}, status
 }
 
 func eventAttributes(event *historypb.HistoryEvent) protoreflect.Message {
