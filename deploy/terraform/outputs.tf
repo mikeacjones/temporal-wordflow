@@ -1,6 +1,6 @@
 output "website_url" {
   description = "Public Wordflow website and API URL."
-  value       = "https://${var.domain_name}"
+  value       = aws_apigatewayv2_api.web.api_endpoint
 }
 
 output "api_gateway_url" {
@@ -21,11 +21,15 @@ output "worker_lambda_version_arn" {
 }
 
 output "worker_deployment" {
-  value = var.project_name
+  value = var.worker_deployment_name
 }
 
 output "temporal_namespace" {
-  value = var.temporal_namespace
+  value = temporalcloud_namespace.wordflow.id
+}
+
+output "temporal_address" {
+  value = temporalcloud_namespace.wordflow.endpoints.grpc_address
 }
 
 output "temporal_api_key_secret_arn" {

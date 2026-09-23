@@ -3,20 +3,14 @@ set -euo pipefail
 
 : "${CAMPAIGN_FILE:?}"
 : "${CAMPAIGN_ID:?}"
+: "${REPO_ROOT:?}"
 : "${TASK_QUEUE:?}"
 : "${TEMPORAL_ADDRESS:?}"
 : "${TEMPORAL_API_KEY:?}"
 : "${TEMPORAL_NAMESPACE:?}"
 
-temporal workflow start \
-  --workflow-id "wordflow-campaign/$CAMPAIGN_ID" \
-  --type WordflowCampaignWorkflow \
-  --task-queue "$TASK_QUEUE" \
-  --id-conflict-policy UseExisting \
-  --id-reuse-policy AllowDuplicateFailedOnly \
-  --static-summary "Palm Springs Offsite Wordflow campaign" \
-  --input-file "$CAMPAIGN_FILE" \
-  >/dev/null
+cd "$REPO_ROOT"
+go run ./cmd/campaign -file "$CAMPAIGN_FILE" -task-queue "$TASK_QUEUE" >/dev/null
 
 for _ in {1..60}; do
 	catalog="$(temporal workflow query \

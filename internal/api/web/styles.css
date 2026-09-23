@@ -380,6 +380,23 @@ h2 { margin-bottom: 8px; font-size: clamp(1.5rem, 4vw, 2.15rem); letter-spacing:
 .quiet:hover, .hints button:hover { background: var(--lavender); }
 .primary:active, .quiet:active, .hints button:active { transform: translate(2px, 2px); box-shadow: none; }
 button:disabled, .workflow-link[aria-disabled="true"] { cursor: not-allowed; opacity: .42; pointer-events: none; transform: none; box-shadow: none; }
+button.pending:disabled { cursor: wait; opacity: .78; }
+button.pending::after {
+  display: inline-block;
+  width: .72em;
+  height: .72em;
+  margin-left: .55em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  content: "";
+  vertical-align: -.05em;
+  animation: button-pending .65s linear infinite;
+}
+@keyframes button-pending { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  button.pending::after { animation: none; border-right-color: currentColor; }
+}
 
 .game { margin-top: 12px; }
 .game-heading { align-items: flex-start; }
@@ -517,8 +534,14 @@ button:disabled, .workflow-link[aria-disabled="true"] { cursor: not-allowed; opa
 }
 .letter:hover { color: white; background: var(--uv); }
 .letter.selected { color: var(--space); background: var(--lime); box-shadow: 3px 3px 0 var(--uv); }
+.letter:disabled {
+  transform: translate(-50%, -50%);
+  box-shadow: 3px 3px 0 var(--space);
+}
+.letter.selected:disabled { box-shadow: 3px 3px 0 var(--uv); }
 
 .actions, .hints { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.actions #submit { min-width: 172px; }
 .hints { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 14px; }
 .hints button { color: var(--space); background: var(--lavender); }
 .hints button.paid { background: var(--pink); }

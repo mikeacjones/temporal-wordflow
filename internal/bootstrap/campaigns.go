@@ -38,17 +38,17 @@ type campaignUnlockFile struct {
 	IntervalHours     int `json:"intervalHours"`
 }
 
-func StartDefaultCampaign(ctx context.Context, temporalClient client.Client, taskQueue string) (campaign.Registration, error) {
+func StartDefaultCampaign(ctx context.Context, temporalClient client.Client, taskQueue string) (workflows.CampaignRegistration, error) {
 	input, err := DefaultWordflowCampaign()
 	if err != nil {
-		return campaign.Registration{}, err
+		return workflows.CampaignRegistration{}, err
 	}
 	return StartWordflowCampaign(ctx, temporalClient, taskQueue, input)
 }
 
-func StartWordflowCampaign(ctx context.Context, temporalClient client.Client, taskQueue string, input workflows.WordflowCampaignWorkflowInput) (campaign.Registration, error) {
+func StartWordflowCampaign(ctx context.Context, temporalClient client.Client, taskQueue string, input workflows.WordflowCampaignWorkflowInput) (workflows.CampaignRegistration, error) {
 	if input.Definition.ID == "" {
-		return campaign.Registration{}, fmt.Errorf("campaign ID is required")
+		return workflows.CampaignRegistration{}, fmt.Errorf("campaign ID is required")
 	}
 	_, err := temporalClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                       workflows.WordflowCampaignWorkflowID(input.Definition.ID),
@@ -57,12 +57,12 @@ func StartWordflowCampaign(ctx context.Context, temporalClient client.Client, ta
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 	}, workflows.WordflowCampaignWorkflowName, input)
 	if err != nil {
-		return campaign.Registration{}, err
+		return workflows.CampaignRegistration{}, err
 	}
-	return campaign.Registration{
-		CampaignID: input.Definition.ID,
+	return workflows.CampaignRegistration{
 		WorkflowID: workflows.WordflowCampaignWorkflowID(input.Definition.ID),
-		Game:       input.Definition.Game,
+		Definition: input.Definition,
+		Levels:     input.Levels,
 	}, nil
 }
 

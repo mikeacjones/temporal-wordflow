@@ -1,20 +1,36 @@
 package workflows
 
 import (
+	"time"
+
 	"github.com/mjones/temporal-word-game/internal/campaign"
+	"github.com/mjones/temporal-word-game/internal/game"
 
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
 type CatalogWorkflowInput struct {
-	InitialCampaigns []campaign.Registration `json:"initialCampaigns,omitempty"`
-	State            *CatalogState           `json:"state,omitempty"`
+	InitialCampaigns []CampaignRegistration `json:"initialCampaigns,omitempty"`
+	State            *CatalogState          `json:"state,omitempty"`
 }
 
 type CatalogState struct {
-	Games     []campaign.GameSummary  `json:"games"`
-	Campaigns []campaign.Registration `json:"campaigns"`
+	Campaigns []CampaignRegistration `json:"campaigns"`
+}
+
+// CampaignRegistration is the immutable campaign snapshot published to the Catalog.
+// It lets the Catalog render campaign cards and authorize level starts without
+// querying every Campaign Workflow.
+type CampaignRegistration struct {
+	WorkflowID string              `json:"workflowId"`
+	Definition campaign.Definition `json:"definition"`
+	Levels     []game.Puzzle       `json:"levels"`
+}
+
+type UnregisterCampaignInput struct {
+	CampaignID string `json:"campaignId"`
+	WorkflowID string `json:"workflowId"`
 }
 
 func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
@@ -30,15 +46,32 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 	}
 	changed := workflow.NewBufferedChannel(ctx, 1)
 
+	if err := workflow.SetQueryHandler(ctx, QueryCatalog, func(input campaign.QueryInput) (campaign.CatalogView, error) {
+		// Query results are not recorded in Workflow history. Wall time keeps
+		// upcoming and active cards current without mutating durable state.
+		now := time.Now().UTC() //workflowcheck:ignore
+		return catalogView(state, input.Player, now), nil
+	}); err != nil {
+		return err
+	}
+
+	if err := workflow.SetQueryHandler(ctx, QueryCatalogWordflowLevel,
+		func(input WordflowLevelQuery) (WordflowLevelResolution, error) {
+			now := time.Now().UTC() //workflowcheck:ignore
+			return resolveCatalogWordflowLevel(state, input, now), nil
+		}); err != nil {
+		return err
+	}
+
 	if err := workflow.SetUpdateHandlerWithOptions(ctx, UpdateOpenCatalog,
-		func(_ workflow.Context, required []campaign.Registration) (campaign.CatalogView, error) {
+		func(_ workflow.Context, required []CampaignRegistration) (int, error) {
 			for _, registration := range required {
 				addCampaign(state, registration)
 			}
 			changed.SendAsync(true)
-			return catalogView(state), nil
+			return len(state.Campaigns), nil
 		}, workflow.UpdateHandlerOptions{
-			Validator: func(_ workflow.Context, required []campaign.Registration) error {
+			Validator: func(_ workflow.Context, required []CampaignRegistration) error {
 				for _, registration := range required {
 					if err := validateCampaignRegistration(state, registration); err != nil {
 						return err
@@ -51,16 +84,34 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 	}
 
 	if err := workflow.SetUpdateHandlerWithOptions(ctx, UpdateRegisterCampaign,
-		func(_ workflow.Context, registration campaign.Registration) (campaign.CatalogView, error) {
-			if existing := findCampaignRegistration(state, registration.CampaignID); existing != nil {
-				return catalogView(state), nil
+		func(_ workflow.Context, registration CampaignRegistration) (bool, error) {
+			if existing := findCampaignRegistration(state, registration.Definition.ID); existing != nil {
+				return false, nil
 			}
 			addCampaign(state, registration)
 			changed.SendAsync(true)
-			return catalogView(state), nil
+			return true, nil
 		}, workflow.UpdateHandlerOptions{
-			Validator: func(_ workflow.Context, registration campaign.Registration) error {
+			Validator: func(_ workflow.Context, registration CampaignRegistration) error {
 				return validateCampaignRegistration(state, registration)
+			},
+		}); err != nil {
+		return err
+	}
+
+	if err := workflow.SetUpdateHandlerWithOptions(ctx, UpdateUnregisterCampaign,
+		func(_ workflow.Context, input UnregisterCampaignInput) (bool, error) {
+			removed := removeCampaign(state, input)
+			if removed {
+				changed.SendAsync(true)
+			}
+			return removed, nil
+		}, workflow.UpdateHandlerOptions{
+			Validator: func(_ workflow.Context, input UnregisterCampaignInput) error {
+				if input.CampaignID == "" || input.WorkflowID == "" {
+					return temporal.NewApplicationError("campaign removal is incomplete", "invalid_campaign_removal")
+				}
+				return nil
 			},
 		}); err != nil {
 		return err
@@ -76,65 +127,76 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 		if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 			return err
 		}
-		return continueCatalogAsNew(ctx, state)
+		return workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{
+			InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
+		}, CatalogWorkflowName, CatalogWorkflowInput{State: state})
 	}
 }
 
-func addCampaign(state *CatalogState, registration campaign.Registration) {
-	if findCampaignRegistration(state, registration.CampaignID) != nil {
+func addCampaign(state *CatalogState, registration CampaignRegistration) {
+	if findCampaignRegistration(state, registration.Definition.ID) != nil {
 		return
-	}
-	if findGame(state, registration.Game.ID) == nil {
-		state.Games = append(state.Games, registration.Game)
 	}
 	state.Campaigns = append(state.Campaigns, registration)
 }
 
-func validateCampaignRegistration(state *CatalogState, registration campaign.Registration) error {
-	if registration.CampaignID == "" || registration.WorkflowID == "" || registration.Game.ID == "" || registration.Game.Title == "" {
+func validateCampaignRegistration(state *CatalogState, registration CampaignRegistration) error {
+	definition := registration.Definition
+	if definition.ID == "" || registration.WorkflowID == "" || definition.Game.ID == "" || definition.Game.Title == "" {
 		return temporal.NewApplicationError("campaign registration is incomplete", "invalid_campaign_registration")
 	}
-	if existing := findCampaignRegistration(state, registration.CampaignID); existing != nil {
-		if *existing != registration {
+	if err := validateWordflowCampaignLevels(registration.Levels); err != nil {
+		return err
+	}
+	if existing := findCampaignRegistration(state, definition.ID); existing != nil {
+		if existing.WorkflowID != registration.WorkflowID {
 			return temporal.NewApplicationError("campaign ID is already registered", "campaign_already_registered")
 		}
 		return nil
 	}
-	if existing := findGame(state, registration.Game.ID); existing != nil && *existing != registration.Game {
-		return temporal.NewApplicationError("game ID is registered with different metadata", "game_already_registered")
+	for _, existing := range state.Campaigns {
+		if existing.Definition.Game.ID == definition.Game.ID && existing.Definition.Game != definition.Game {
+			return temporal.NewApplicationError("game ID is registered with different metadata", "game_already_registered")
+		}
 	}
 	return nil
 }
 
-func findCampaignRegistration(state *CatalogState, campaignID string) *campaign.Registration {
+func findCampaignRegistration(state *CatalogState, campaignID string) *CampaignRegistration {
 	for index := range state.Campaigns {
-		if state.Campaigns[index].CampaignID == campaignID {
+		if state.Campaigns[index].Definition.ID == campaignID {
 			return &state.Campaigns[index]
 		}
 	}
 	return nil
 }
 
-func findGame(state *CatalogState, gameID string) *campaign.GameSummary {
-	for index := range state.Games {
-		if state.Games[index].ID == gameID {
-			return &state.Games[index]
+func removeCampaign(state *CatalogState, input UnregisterCampaignInput) bool {
+	for index, registration := range state.Campaigns {
+		if registration.Definition.ID == input.CampaignID && registration.WorkflowID == input.WorkflowID {
+			state.Campaigns = append(state.Campaigns[:index], state.Campaigns[index+1:]...)
+			return true
 		}
 	}
-	return nil
+	return false
 }
 
-func catalogView(state *CatalogState) campaign.CatalogView {
-	return campaign.CatalogView{
-		Games:     append([]campaign.GameSummary(nil), state.Games...),
-		Campaigns: append([]campaign.Registration(nil), state.Campaigns...),
+func catalogView(state *CatalogState, player campaign.PlayerProgress, now time.Time) campaign.CatalogView {
+	view := campaign.CatalogView{Campaigns: make([]campaign.View, 0, len(state.Campaigns))}
+	for _, registration := range state.Campaigns {
+		view.Campaigns = append(view.Campaigns, wordflowCampaignView(registration, player, now))
 	}
+	return view
 }
 
-func continueCatalogAsNew(ctx workflow.Context, state *CatalogState) error {
-	options := workflow.ContinueAsNewErrorOptions{}
-	if workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
-		options.InitialVersioningBehavior = workflow.ContinueAsNewVersioningBehaviorAutoUpgrade
+func resolveCatalogWordflowLevel(state *CatalogState, input WordflowLevelQuery, now time.Time) WordflowLevelResolution {
+	registration := findCampaignRegistration(state, input.CampaignID)
+	if registration == nil {
+		return WordflowLevelResolution{
+			CampaignID: input.CampaignID,
+			Reason:     "campaign is not available",
+			ErrorType:  "campaign_not_found",
+		}
 	}
-	return workflow.NewContinueAsNewErrorWithOptions(ctx, options, CatalogWorkflowName, CatalogWorkflowInput{State: state})
+	return resolveWordflowLevel(*registration, input, now)
 }

@@ -44,7 +44,9 @@ func LeaderboardWorkflow(ctx workflow.Context, input LeaderboardWorkflowInput) e
 		upsertLeaderboardEntry(state, entry)
 		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 			workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
-			return continueLeaderboardAsNew(ctx, state)
+			return workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{
+				InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
+			}, LeaderboardWorkflowName, LeaderboardWorkflowInput{State: state})
 		}
 	}
 }
@@ -80,12 +82,4 @@ func sortLeaderboard(state *LeaderboardState) {
 		}
 		return left.PlayerID < right.PlayerID
 	})
-}
-
-func continueLeaderboardAsNew(ctx workflow.Context, state *LeaderboardState) error {
-	options := workflow.ContinueAsNewErrorOptions{}
-	if workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
-		options.InitialVersioningBehavior = workflow.ContinueAsNewVersioningBehaviorAutoUpgrade
-	}
-	return workflow.NewContinueAsNewErrorWithOptions(ctx, options, LeaderboardWorkflowName, LeaderboardWorkflowInput{State: state})
 }

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="lavender" cx="0" cy="0" r="1" gradientTransform="translate(98 35) rotate(35) scale(480 350)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#cfd2ff"/>
+      <stop offset="1" stop-color="#f8fafc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="pink" cx="0" cy="0" r="1" gradientTransform="translate(1110 55) rotate(130) scale(390 300)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffd0e6"/>
+      <stop offset="1" stop-color="#f8fafc" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#444ce7" stroke-opacity=".08"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" rx="32" fill="#f8fafc"/>
+  <rect width="1200" height="630" rx="32" fill="url(#lavender)"/>
+  <rect width="1200" height="630" rx="32" fill="url(#pink)"/>
+  <rect width="1200" height="630" rx="32" fill="url(#grid)"/>
+
+  <g transform="translate(70 66)">
+    <rect x="7" y="8" width="96" height="96" rx="25" fill="#141414"/>
+    <rect width="96" height="96" rx="25" fill="#444ce7" stroke="#141414" stroke-width="4"/>
+    <path d="M48 16c3 19 13 29 32 32-19 3-29 13-32 32-3-19-13-29-32-32 19-3 29-13 32-32Z" fill="#fff"/>
+  </g>
+
+  <text x="190" y="102" fill="#444ce7" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="21" font-weight="800" letter-spacing="3">A DURABLE WORD GAME</text>
+  <text x="190" y="174" fill="#141414" font-family="Inter, Arial, sans-serif" font-size="72" font-weight="800" letter-spacing="-4">Temporal Wordflow</text>
+
+  <g transform="translate(70 242)">
+    <rect x="8" y="9" width="1060" height="220" rx="28" fill="#141414" fill-opacity=".12"/>
+    <rect width="1060" height="220" rx="28" fill="#fff" fill-opacity=".94" stroke="#141414" stroke-width="4"/>
+    <text x="42" y="70" fill="#141414" font-family="Inter, Arial, sans-serif" font-size="45" font-weight="800">Build words.</text>
+    <text x="42" y="127" fill="#141414" font-family="Inter, Arial, sans-serif" font-size="45" font-weight="800">Preserve state.</text>
+    <text x="42" y="184" fill="#141414" font-family="Inter, Arial, sans-serif" font-size="45" font-weight="800">Survive failure.</text>
+
+    <g transform="translate(704 45)">
+      <rect x="0" y="0" width="74" height="74" rx="16" fill="#e8e9ff" stroke="#141414" stroke-width="3"/>
+      <rect x="88" y="0" width="74" height="74" rx="16" fill="#86e8ff" stroke="#141414" stroke-width="3"/>
+      <rect x="176" y="0" width="74" height="74" rx="16" fill="#b7f36b" stroke="#141414" stroke-width="3"/>
+      <rect x="44" y="88" width="74" height="74" rx="16" fill="#f5c451" stroke="#141414" stroke-width="3"/>
+      <rect x="132" y="88" width="74" height="74" rx="16" fill="#ff8fc3" stroke="#141414" stroke-width="3"/>
+      <g fill="#141414" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="34" font-weight="800" text-anchor="middle">
+        <text x="37" y="49">W</text><text x="125" y="49">O</text><text x="213" y="49">R</text>
+        <text x="81" y="137">D</text><text x="169" y="137">S</text>
+      </g>
+    </g>
+  </g>
+
+  <g transform="translate(70 517)">
+    <rect width="1060" height="52" rx="26" fill="#141414"/>
+    <circle cx="28" cy="26" r="8" fill="#b7f36b"/>
+    <circle cx="28" cy="26" r="15" fill="#b7f36b" fill-opacity=".16"/>
+    <text x="54" y="33" fill="#fff" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" letter-spacing="1.2">TEMPORAL DURABLE STATE · ACTIVE</text>
+    <text x="1020" y="33" fill="#b7f36b" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="800" text-anchor="end">PLAY NOW ↗</text>
+  </g>
+</svg>

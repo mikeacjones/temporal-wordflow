@@ -1,9 +1,13 @@
-# The AWS provider uses the active AWS CLI profile and configured region.
-# Supply the API key only through the environment:
-# export TF_VAR_temporal_api_key='...'
+# The AWS provider uses the active AWS CLI profile. The
+# Temporal Cloud provider uses TEMPORAL_CLOUD_API_KEY as its bootstrap
+# credential; the stack creates a separate, Namespace-scoped runtime key.
 
-project_name       = "temporal-word-game"
-domain_name        = "games.tmprl-demo.cloud"
-hosted_zone_name   = "tmprl-demo.cloud"
-temporal_namespace = "michaelj-durable-games.a2dd6"
-temporal_address   = "michaelj-durable-games.a2dd6.tmprl.cloud:7233"
+project_name        = "temporal-word-game"
+temporal_account_id = "a2dd6"
+aws_region          = "ca-central-1"
+temporal_region     = "aws-ca-central-1"
+
+# Set either value to 0 when scale-to-zero cost matters more than first-use latency.
+api_memory_size                 = 1024
+api_provisioned_concurrency     = 1
+worker_provisioned_concurrency  = 1

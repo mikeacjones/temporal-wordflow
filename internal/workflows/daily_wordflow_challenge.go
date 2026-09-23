@@ -193,9 +193,7 @@ func shouldContinueDailyWordflowChallenge(ctx workflow.Context) bool {
 }
 
 func continueDailyWordflowChallengeAsNew(ctx workflow.Context, state *DailyWordflowChallengeState) error {
-	options := workflow.ContinueAsNewErrorOptions{}
-	if workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
-		options.InitialVersioningBehavior = workflow.ContinueAsNewVersioningBehaviorAutoUpgrade
-	}
-	return workflow.NewContinueAsNewErrorWithOptions(ctx, options, DailyWordflowChallengeWorkflowName, DailyWordflowChallengeWorkflowInput{State: state})
+	return workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{
+		InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
+	}, DailyWordflowChallengeWorkflowName, DailyWordflowChallengeWorkflowInput{State: state})
 }

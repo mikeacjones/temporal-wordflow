@@ -124,14 +124,11 @@ type SpeedBonusTier struct {
 }
 
 type GameView struct {
-	WorkflowID    string             `json:"workflowId"`
-	PlayerID      string             `json:"playerId"`
 	CampaignID    string             `json:"campaignId"`
 	Level         int                `json:"level"`
 	Title         string             `json:"title"`
 	Letters       string             `json:"letters"`
 	Cells         []CellView         `json:"cells"`
-	Words         []WordView         `json:"words"`
 	FoundWords    int                `json:"foundWords"`
 	TotalWords    int                `json:"totalWords"`
 	Attempts      int                `json:"attempts"`
@@ -145,7 +142,6 @@ type GameView struct {
 	TimedOut      bool               `json:"timedOut,omitempty"`
 	ExpiresAt     *time.Time         `json:"expiresAt,omitempty"`
 	SpecialEvent  *SpecialEvent      `json:"specialEvent,omitempty"`
-	CompletedAt   *time.Time         `json:"completedAt,omitempty"`
 	Score         *GameScore         `json:"score,omitempty"`
 	SolutionWords []SolutionWordView `json:"solutionWords,omitempty"`
 }
@@ -198,10 +194,7 @@ type Reward struct {
 }
 
 type PlayerView struct {
-	PlayerID             string                            `json:"playerId"`
 	DisplayName          string                            `json:"displayName"`
-	CreatedAt            time.Time                         `json:"createdAt"`
-	LastSeenAt           time.Time                         `json:"lastSeenAt"`
 	CurrentStreak        int                               `json:"currentStreak"`
 	BestStreak           int                               `json:"bestStreak"`
 	Points               int                               `json:"points"`
@@ -210,8 +203,6 @@ type PlayerView struct {
 	StreakFreezeCost     int                               `json:"streakFreezeCost"`
 	Campaigns            []campaign.PlayerCampaignProgress `json:"campaigns"`
 	CompletedLevelCount  int                               `json:"completedLevelCount"`
-	CompletedLevels      []LevelCompletion                 `json:"completedLevels"`
-	Rewards              []Reward                          `json:"rewards"`
 	ActiveGame           *ActiveGame                       `json:"activeGame,omitempty"`
 }
 

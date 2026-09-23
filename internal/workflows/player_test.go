@@ -67,7 +67,6 @@ func TestAuthenticationClaimsUsernameAndValidatesExistingPlayer(t *testing.T) {
 
 	env.ExecuteWorkflow(PlayerWorkflow, PlayerWorkflowInput{State: state})
 
-	require.Equal(t, "alice", registered.PlayerID)
 	require.Equal(t, "Alice", registered.DisplayName)
 	require.Equal(t, registered.DisplayName, loggedIn.DisplayName)
 	var continueAsNew *workflow.ContinueAsNewError

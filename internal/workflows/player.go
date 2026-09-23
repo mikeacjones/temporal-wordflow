@@ -54,6 +54,11 @@ type StartLevelInput struct {
 	Level      int    `json:"level"`
 }
 
+type StartLevelResult struct {
+	Player game.PlayerView `json:"player"`
+	Game   game.GameView   `json:"game"`
+}
+
 type SpendPointsInput struct {
 	LevelWorkflowID string `json:"levelWorkflowId"`
 	Amount          int    `json:"amount"`
@@ -114,28 +119,27 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 		return err
 	}
 
-	if err := workflow.SetUpdateHandlerWithOptions(ctx, UpdateStartLevel, func(ctx workflow.Context, update StartLevelInput) (game.PlayerView, error) {
+	if err := workflow.SetUpdateHandlerWithOptions(ctx, UpdateStartLevel, func(ctx workflow.Context, update StartLevelInput) (StartLevelResult, error) {
 		if err := lock.Lock(ctx); err != nil {
-			return game.PlayerView{}, err
+			return StartLevelResult{}, err
 		}
 		defer lock.Unlock()
 
 		now := workflow.Now(ctx)
 		if state.ActiveGame != nil {
-			return game.PlayerView{}, temporal.NewApplicationError("finish the active level before starting another", "game_active")
+			return StartLevelResult{}, temporal.NewApplicationError("finish the active level before starting another", "game_active")
 		}
 
 		playerProgress := campaignProgressForStart(state, update.CampaignID, now)
 		activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 30 * time.Second})
 		var resolution WordflowLevelResolution
 		if err := workflow.ExecuteActivity(activityCtx, ActivityResolveWordflowLevel, ResolveWordflowLevelActivityInput{
-			CampaignWorkflowID: WordflowCampaignWorkflowID(update.CampaignID),
-			Query:              WordflowLevelQuery{Player: playerProgress, Level: update.Level},
+			Query: WordflowLevelQuery{CampaignID: update.CampaignID, Player: playerProgress, Level: update.Level},
 		}).Get(ctx, &resolution); err != nil {
-			return game.PlayerView{}, fmt.Errorf("resolve campaign level: %w", err)
+			return StartLevelResult{}, fmt.Errorf("resolve campaign level: %w", err)
 		}
 		if !resolution.Allowed {
-			return game.PlayerView{}, temporal.NewApplicationError(resolution.Reason, resolution.ErrorType)
+			return StartLevelResult{}, temporal.NewApplicationError(resolution.Reason, resolution.ErrorType)
 		}
 
 		levelID := WordflowLevelWorkflowID(state.PlayerID, update.CampaignID, update.Level)
@@ -143,12 +147,12 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 			WorkflowID: levelID,
 		})
 		future := workflow.ExecuteChildWorkflow(childCtx, WordflowLevelWorkflowName, WordflowLevelWorkflowInput{
-			PlayerID: state.PlayerID, CampaignID: update.CampaignID, Puzzle: resolution.Puzzle,
+			PlayerID: state.PlayerID, CampaignID: update.CampaignID, Puzzle: resolution.Puzzle, StartedAt: now,
 		})
 		// Wait only for Temporal to record the child start. Its completion stays
 		// in the selector below.
 		if err := future.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
-			return game.PlayerView{}, fmt.Errorf("start level workflow: %w", err)
+			return StartLevelResult{}, fmt.Errorf("start level workflow: %w", err)
 		}
 		levelFuture = future
 
@@ -159,7 +163,8 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 		}
 		state.LastSeenAt = now
 		changed.SendAsync(true)
-		return playerView(state), nil
+		initialGame := newWordflowLevelState(levelID, state.PlayerID, update.CampaignID, resolution.Puzzle, now)
+		return StartLevelResult{Player: playerView(state), Game: wordflowLevelView(initialGame)}, nil
 	}, workflow.UpdateHandlerOptions{
 		Validator: func(_ workflow.Context, update StartLevelInput) error {
 			if update.CampaignID == "" || update.Level < 1 {
@@ -264,7 +269,9 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 			if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 				return err
 			}
-			return continuePlayerAsNew(ctx, state)
+			return workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{
+				InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
+			}, PlayerWorkflowName, PlayerWorkflowInput{State: state})
 		}
 	}
 }
@@ -280,10 +287,7 @@ func initialPlayerState(ctx workflow.Context, input PlayerWorkflowInput) *Player
 
 func playerView(state *PlayerState) game.PlayerView {
 	return game.PlayerView{
-		PlayerID:             state.PlayerID,
 		DisplayName:          state.DisplayName,
-		CreatedAt:            state.CreatedAt,
-		LastSeenAt:           state.LastSeenAt,
 		CurrentStreak:        state.CurrentStreak,
 		BestStreak:           state.BestStreak,
 		Points:               state.Points,
@@ -292,8 +296,6 @@ func playerView(state *PlayerState) game.PlayerView {
 		StreakFreezeCost:     streakFreezePointCost,
 		Campaigns:            append([]campaign.PlayerCampaignProgress(nil), state.Campaigns...),
 		CompletedLevelCount:  len(state.CompletedLevels),
-		CompletedLevels:      append([]game.LevelCompletion(nil), state.CompletedLevels...),
-		Rewards:              append([]game.Reward(nil), state.Rewards...),
 		ActiveGame:           cloneActiveGame(state.ActiveGame),
 	}
 }
@@ -403,14 +405,6 @@ func joinPlayerCampaign(state *PlayerState, campaignID string, joinedAt time.Tim
 func shouldContinuePlayer(ctx workflow.Context, state *PlayerState) bool {
 	return state.ActiveGame == nil && (workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 		workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged())
-}
-
-func continuePlayerAsNew(ctx workflow.Context, state *PlayerState) error {
-	options := workflow.ContinueAsNewErrorOptions{}
-	if workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
-		options.InitialVersioningBehavior = workflow.ContinueAsNewVersioningBehaviorAutoUpgrade
-	}
-	return workflow.NewContinueAsNewErrorWithOptions(ctx, options, PlayerWorkflowName, PlayerWorkflowInput{State: state})
 }
 
 func cloneActiveGame(active *game.ActiveGame) *game.ActiveGame {

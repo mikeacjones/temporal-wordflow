@@ -24,13 +24,20 @@ type WordflowCampaignState struct {
 }
 
 type RegisterCampaignActivityInput struct {
-	Registration campaign.Registration `json:"registration"`
-	UpdateID     string                `json:"updateId"`
+	Registration CampaignRegistration `json:"registration"`
+	UpdateID     string               `json:"updateId"`
+}
+
+type UnregisterCampaignActivityInput struct {
+	CampaignID string `json:"campaignId"`
+	WorkflowID string `json:"workflowId"`
+	UpdateID   string `json:"updateId"`
 }
 
 type WordflowLevelQuery struct {
-	Player campaign.PlayerProgress `json:"player"`
-	Level  int                     `json:"level"`
+	CampaignID string                  `json:"campaignId"`
+	Player     campaign.PlayerProgress `json:"player"`
+	Level      int                     `json:"level"`
 }
 
 type WordflowLevelResolution struct {
@@ -43,8 +50,7 @@ type WordflowLevelResolution struct {
 }
 
 type ResolveWordflowLevelActivityInput struct {
-	CampaignWorkflowID string             `json:"campaignWorkflowId"`
-	Query              WordflowLevelQuery `json:"query"`
+	Query WordflowLevelQuery `json:"query"`
 }
 
 func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkflowInput) error {
@@ -55,37 +61,40 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 	if err := validateWordflowCampaignLevels(state.Levels); err != nil {
 		return err
 	}
+	workflowID := workflow.GetInfo(ctx).WorkflowExecution.ID
+	registration := func() CampaignRegistration {
+		return CampaignRegistration{
+			WorkflowID: workflowID,
+			Definition: state.Definition,
+			Levels:     state.Levels,
+		}
+	}
 
 	if err := workflow.SetQueryHandler(ctx, QueryCampaignSummary, func() (campaign.Summary, error) {
 		// Query results are not recorded in Workflow history, so they can reflect
 		// wall time as long as the value never mutates durable Workflow state.
 		now := time.Now().UTC() //workflowcheck:ignore
-		return wordflowCampaignSummary(ctx, state, now), nil
+		return wordflowCampaignSummary(registration(), now), nil
 	}); err != nil {
 		return err
 	}
 	if err := workflow.SetQueryHandler(ctx, QueryCampaignView, func(input campaign.QueryInput) (campaign.View, error) {
 		now := time.Now().UTC() //workflowcheck:ignore
-		return wordflowCampaignView(ctx, state, input.Player, now), nil
+		return wordflowCampaignView(registration(), input.Player, now), nil
 	}); err != nil {
 		return err
 	}
 	if err := workflow.SetQueryHandler(ctx, QueryWordflowLevel, func(input WordflowLevelQuery) (WordflowLevelResolution, error) {
 		now := time.Now().UTC() //workflowcheck:ignore
-		return resolveWordflowLevel(ctx, state, input, now), nil
+		return resolveWordflowLevel(registration(), input, now), nil
 	}); err != nil {
 		return err
 	}
 
 	if !state.Registered {
 		activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 30 * time.Second})
-		registration := campaign.Registration{
-			CampaignID: state.Definition.ID,
-			WorkflowID: workflow.GetInfo(ctx).WorkflowExecution.ID,
-			Game:       state.Definition.Game,
-		}
 		if err := workflow.ExecuteActivity(activityCtx, ActivityRegisterCampaign, RegisterCampaignActivityInput{
-			Registration: registration,
+			Registration: registration(),
 			UpdateID:     fmt.Sprintf("register/%s/%s", state.Definition.ID, workflow.GetInfo(ctx).WorkflowExecution.RunID),
 		}).Get(ctx, nil); err != nil {
 			return fmt.Errorf("register campaign: %w", err)
@@ -100,6 +109,15 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 				return err
 			}
 		}
+		activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 30 * time.Second})
+		if err := workflow.ExecuteActivity(activityCtx, ActivityUnregisterCampaign, UnregisterCampaignActivityInput{
+			CampaignID: state.Definition.ID,
+			WorkflowID: workflowID,
+			UpdateID:   fmt.Sprintf("unregister/%s/%s", state.Definition.ID, workflow.GetInfo(ctx).WorkflowExecution.RunID),
+		}).Get(ctx, nil); err != nil {
+			return fmt.Errorf("unregister campaign: %w", err)
+		}
+		return nil
 	}
 	return workflow.Await(ctx, func() bool { return false })
 }
@@ -125,24 +143,26 @@ func validateWordflowCampaignLevels(levels []game.Puzzle) error {
 	return nil
 }
 
-func wordflowCampaignSummary(ctx workflow.Context, state *WordflowCampaignState, now time.Time) campaign.Summary {
+func wordflowCampaignSummary(registration CampaignRegistration, now time.Time) campaign.Summary {
+	definition := registration.Definition
 	return campaign.Summary{
-		CampaignID:  state.Definition.ID,
-		Kind:        state.Definition.Kind,
-		WorkflowID:  workflow.GetInfo(ctx).WorkflowExecution.ID,
-		Game:        state.Definition.Game,
-		Title:       state.Definition.Title,
-		Description: state.Definition.Description,
-		Status:      wordflowCampaignStatus(state.Definition, now),
-		StartsAt:    state.Definition.StartsAt,
-		EndsAt:      state.Definition.EndsAt,
-		TotalLevels: len(state.Levels),
+		CampaignID:  definition.ID,
+		Kind:        definition.Kind,
+		WorkflowID:  registration.WorkflowID,
+		Game:        definition.Game,
+		Title:       definition.Title,
+		Description: definition.Description,
+		Status:      wordflowCampaignStatus(definition, now),
+		StartsAt:    definition.StartsAt,
+		EndsAt:      definition.EndsAt,
+		TotalLevels: len(registration.Levels),
 	}
 }
 
-func wordflowCampaignView(ctx workflow.Context, state *WordflowCampaignState, player campaign.PlayerProgress, now time.Time) campaign.View {
-	summary := wordflowCampaignSummary(ctx, state, now)
-	progress := findPlayerCampaign(player.Campaigns, state.Definition.ID)
+func wordflowCampaignView(registration CampaignRegistration, player campaign.PlayerProgress, now time.Time) campaign.View {
+	definition := registration.Definition
+	summary := wordflowCampaignSummary(registration, now)
+	progress := findPlayerCampaign(player.Campaigns, definition.ID)
 	joinedAt := now
 	nextLevel := 1
 	completedLevels := 0
@@ -154,19 +174,19 @@ func wordflowCampaignView(ctx workflow.Context, state *WordflowCampaignState, pl
 		failed = progress.Failed
 	}
 
-	eligible, reason := campaignEligibility(state.Definition, player, summary.Status)
-	if player.ActiveCampaignID != "" && player.ActiveCampaignID != state.Definition.ID {
+	eligible, reason := campaignEligibility(definition, player, summary.Status)
+	if player.ActiveCampaignID != "" && player.ActiveCampaignID != definition.ID {
 		eligible = false
 		reason = "Finish the active level before starting another campaign."
 	}
-	unlocked := unlockedWordflowLevels(state.Definition.Unlock, joinedAt, now, len(state.Levels))
-	levels := make([]campaign.LevelView, 0, len(state.Levels))
-	for _, puzzle := range state.Levels {
+	unlocked := unlockedWordflowLevels(definition.Unlock, joinedAt, now, len(registration.Levels))
+	levels := make([]campaign.LevelView, 0, len(registration.Levels))
+	for _, puzzle := range registration.Levels {
 		status := campaign.LevelLocked
 		switch {
 		case puzzle.Level < nextLevel:
 			status = campaign.LevelComplete
-		case player.ActiveCampaignID == state.Definition.ID && player.ActiveLevel == puzzle.Level:
+		case player.ActiveCampaignID == definition.ID && player.ActiveLevel == puzzle.Level:
 			status = campaign.LevelActive
 		case eligible && puzzle.Level == nextLevel && puzzle.Level <= unlocked:
 			status = campaign.LevelAvailable
@@ -175,24 +195,24 @@ func wordflowCampaignView(ctx workflow.Context, state *WordflowCampaignState, pl
 		}
 		levels = append(levels, campaign.LevelView{
 			Level: puzzle.Level, Title: puzzle.Title, Status: status,
-			UnlockedAt: wordflowLevelUnlockTime(state.Definition.Unlock, joinedAt, puzzle.Level),
+			UnlockedAt: wordflowLevelUnlockTime(definition.Unlock, joinedAt, puzzle.Level),
 		})
 	}
 
 	return campaign.View{
-		CampaignID: state.Definition.ID, Kind: state.Definition.Kind, WorkflowID: summary.WorkflowID,
-		Game: state.Definition.Game, Title: state.Definition.Title, Description: state.Definition.Description,
-		Status: summary.Status, StartsAt: state.Definition.StartsAt, EndsAt: state.Definition.EndsAt,
+		CampaignID: definition.ID, Kind: definition.Kind, WorkflowID: summary.WorkflowID,
+		Game: definition.Game, Title: definition.Title, Description: definition.Description,
+		Status: summary.Status, StartsAt: definition.StartsAt, EndsAt: definition.EndsAt,
 		Eligible: eligible, Failed: failed, LockedReason: reason, NextLevel: nextLevel,
-		CompletedLevels: completedLevels, TotalLevels: len(state.Levels), Levels: levels,
+		CompletedLevels: completedLevels, TotalLevels: len(registration.Levels), Levels: levels,
 	}
 }
 
-func resolveWordflowLevel(ctx workflow.Context, state *WordflowCampaignState, input WordflowLevelQuery, now time.Time) WordflowLevelResolution {
-	view := wordflowCampaignView(ctx, state, input.Player, now)
+func resolveWordflowLevel(registration CampaignRegistration, input WordflowLevelQuery, now time.Time) WordflowLevelResolution {
+	view := wordflowCampaignView(registration, input.Player, now)
 	resolution := WordflowLevelResolution{
-		CampaignID:  state.Definition.ID,
-		TotalLevels: len(state.Levels),
+		CampaignID:  registration.Definition.ID,
+		TotalLevels: len(registration.Levels),
 	}
 	if !view.Eligible {
 		resolution.Reason = view.LockedReason
@@ -210,7 +230,7 @@ func resolveWordflowLevel(ctx workflow.Context, state *WordflowCampaignState, in
 		return resolution
 	}
 	resolution.Allowed = true
-	resolution.Puzzle = state.Levels[input.Level-1]
+	resolution.Puzzle = registration.Levels[input.Level-1]
 	return resolution
 }
 

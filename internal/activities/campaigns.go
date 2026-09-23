@@ -2,26 +2,26 @@ package activities
 
 import (
 	"context"
+	"errors"
 
-	"github.com/mjones/temporal-word-game/internal/campaign"
 	"github.com/mjones/temporal-word-game/internal/workflows"
 
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 )
 
 type Campaigns struct {
-	Temporal      client.Client
-	ClientOptions client.Options
-	TaskQueue     string
+	Temporal  client.Client
+	Provider  *TemporalClientProvider
+	TaskQueue string
 }
 
 func (a *Campaigns) RegisterCampaign(ctx context.Context, input workflows.RegisterCampaignActivityInput) error {
-	temporalClient, closeClient, err := a.client()
+	temporalClient, err := activityTemporalClient(a.Temporal, a.Provider)
 	if err != nil {
 		return err
 	}
-	defer closeClient()
 
 	start := temporalClient.NewWithStartWorkflowOperation(client.StartWorkflowOptions{
 		ID:                       workflows.CatalogWorkflowID,
@@ -39,18 +39,55 @@ func (a *Campaigns) RegisterCampaign(ctx context.Context, input workflows.Regist
 	if err != nil {
 		return err
 	}
-	var view campaign.CatalogView
-	return handle.Get(ctx, &view)
+	var added bool
+	if err := handle.Get(ctx, &added); err != nil {
+		var applicationError *temporal.ApplicationError
+		if errors.As(err, &applicationError) {
+			return temporal.NewNonRetryableApplicationError(applicationError.Message(), applicationError.Type(), err)
+		}
+		return err
+	}
+	return nil
+}
+
+func (a *Campaigns) UnregisterCampaign(ctx context.Context, input workflows.UnregisterCampaignActivityInput) error {
+	temporalClient, err := activityTemporalClient(a.Temporal, a.Provider)
+	if err != nil {
+		return err
+	}
+
+	handle, err := temporalClient.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   workflows.CatalogWorkflowID,
+		UpdateID:     input.UpdateID,
+		UpdateName:   workflows.UpdateUnregisterCampaign,
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+		Args: []any{workflows.UnregisterCampaignInput{
+			CampaignID: input.CampaignID,
+			WorkflowID: input.WorkflowID,
+		}},
+	})
+	if err != nil {
+		return err
+	}
+	var removed bool
+	if err := handle.Get(ctx, &removed); err != nil {
+		var applicationError *temporal.ApplicationError
+		if errors.As(err, &applicationError) {
+			return temporal.NewNonRetryableApplicationError(applicationError.Message(), applicationError.Type(), err)
+		}
+		return err
+	}
+	return nil
 }
 
 func (a *Campaigns) ResolveWordflowLevel(ctx context.Context, input workflows.ResolveWordflowLevelActivityInput) (workflows.WordflowLevelResolution, error) {
-	temporalClient, closeClient, err := a.client()
+	temporalClient, err := activityTemporalClient(a.Temporal, a.Provider)
 	if err != nil {
 		return workflows.WordflowLevelResolution{}, err
 	}
-	defer closeClient()
 
-	result, err := temporalClient.QueryWorkflow(ctx, input.CampaignWorkflowID, "", workflows.QueryWordflowLevel, input.Query)
+	result, err := temporalClient.QueryWorkflow(ctx, workflows.CatalogWorkflowID, "",
+		workflows.QueryCatalogWordflowLevel, input.Query)
 	if err != nil {
 		return workflows.WordflowLevelResolution{}, err
 	}
@@ -59,17 +96,6 @@ func (a *Campaigns) ResolveWordflowLevel(ctx context.Context, input workflows.Re
 		return workflows.WordflowLevelResolution{}, err
 	}
 	return resolution, nil
-}
-
-func (a *Campaigns) client() (client.Client, func(), error) {
-	if a.Temporal != nil {
-		return a.Temporal, func() {}, nil
-	}
-	temporalClient, err := client.Dial(a.ClientOptions)
-	if err != nil {
-		return nil, nil, err
-	}
-	return temporalClient, temporalClient.Close, nil
 }
 
 func (a *Campaigns) taskQueue() string {

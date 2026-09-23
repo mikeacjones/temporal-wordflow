@@ -41,5 +41,5 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("started %s as %s\n", registration.CampaignID, registration.WorkflowID)
+	fmt.Printf("started %s as %s\n", registration.Definition.ID, registration.WorkflowID)
 }

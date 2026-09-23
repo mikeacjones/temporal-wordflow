@@ -220,11 +220,11 @@ func TestLevelViewShowsCurrentHintAndAccuracyBonuses(t *testing.T) {
 	require.Equal(t, 4, view.HintBonus)
 }
 
-func TestHintsAndShuffleAreDurableState(t *testing.T) {
+func TestHintsAreDurableState(t *testing.T) {
 	puzzle := testPuzzle(t, 2)
 	state := &WordflowLevelState{
-		Puzzle: puzzle, Letters: puzzle.Letters,
-		Hints: game.HintInventory{Letters: 1, Brushes: 1, Words: 1},
+		Puzzle: puzzle,
+		Hints:  game.HintInventory{Letters: 1, Brushes: 1, Words: 1},
 	}
 
 	outcome, err := applyHint(state, game.HintLetter, false)
@@ -237,10 +237,6 @@ func TestHintsAndShuffleAreDurableState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "word_revealed", outcome)
 	require.Len(t, state.FoundAnswers, 1)
-
-	first := shuffleLetters(puzzle.Letters, 1)
-	require.NotEqual(t, puzzle.Letters, first)
-	require.Equal(t, first, shuffleLetters(puzzle.Letters, 1))
 }
 
 func TestHintsSkipLettersVisibleFromFoundWords(t *testing.T) {
@@ -320,7 +316,6 @@ func TestPaidHintSpendsPointsThroughActivity(t *testing.T) {
 		PlayerID:   "test-player",
 		CampaignID: "test-campaign",
 		Puzzle:     puzzle,
-		Letters:    puzzle.Letters,
 	}})
 
 	require.NoError(t, env.GetWorkflowError())

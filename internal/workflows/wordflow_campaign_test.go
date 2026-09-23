@@ -18,6 +18,10 @@ func testRegisterCampaignActivity(context.Context, RegisterCampaignActivityInput
 	return nil
 }
 
+func testUnregisterCampaignActivity(context.Context, UnregisterCampaignActivityInput) error {
+	return nil
+}
+
 func TestWordflowCampaignExposesTheCommonCampaignQueries(t *testing.T) {
 	suite := testsuite.WorkflowTestSuite{}
 	env := suite.NewTestWorkflowEnvironment()
@@ -172,6 +176,34 @@ func TestCampaignStatusUsesConfiguredWindow(t *testing.T) {
 	require.Equal(t, campaign.StatusUpcoming, wordflowCampaignStatus(definition, startsAt.Add(-time.Second)))
 	require.Equal(t, campaign.StatusActive, wordflowCampaignStatus(definition, startsAt))
 	require.Equal(t, campaign.StatusEnded, wordflowCampaignStatus(definition, endsAt))
+}
+
+func TestCampaignUnregistersAndCompletesAtItsEndTime(t *testing.T) {
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(testRegisterCampaignActivity, activity.RegisterOptions{Name: ActivityRegisterCampaign})
+	env.RegisterActivityWithOptions(testUnregisterCampaignActivity, activity.RegisterOptions{Name: ActivityUnregisterCampaign})
+	env.OnActivity(ActivityRegisterCampaign, mock.Anything, mock.Anything).Return(nil).Once()
+
+	endsAt := env.Now().Add(time.Minute)
+	var removal UnregisterCampaignActivityInput
+	env.OnActivity(ActivityUnregisterCampaign, mock.Anything, mock.Anything).
+		Run(func(arguments mock.Arguments) {
+			removal = arguments.Get(1).(UnregisterCampaignActivityInput)
+		}).Return(nil).Once()
+
+	env.ExecuteWorkflow(WordflowCampaignWorkflow, WordflowCampaignWorkflowInput{
+		Definition: campaign.Definition{
+			ID: "expiring", EndsAt: &endsAt,
+			Game: campaign.GameSummary{ID: campaign.GameWordflow, Title: "Wordflow"},
+		},
+		Levels: []game.Puzzle{{Level: 1, Title: "One", Letters: "ONE"}},
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, "expiring", removal.CampaignID)
+	require.NotEmpty(t, removal.WorkflowID)
+	env.AssertExpectations(t)
 }
 
 func TestCampaignRejectsMoreThanEightLetters(t *testing.T) {

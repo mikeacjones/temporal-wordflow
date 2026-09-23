@@ -11,27 +11,22 @@ import (
 )
 
 type Leaderboard struct {
-	Temporal      client.Client
-	ClientOptions client.Options
-	TaskQueue     string
+	Temporal  client.Client
+	Provider  *TemporalClientProvider
+	TaskQueue string
 }
 
 func (a *Leaderboard) PublishLeaderboard(ctx context.Context, entry game.LeaderboardEntry) error {
-	temporalClient := a.Temporal
-	if temporalClient == nil {
-		var err error
-		temporalClient, err = client.Dial(a.ClientOptions)
-		if err != nil {
-			return err
-		}
-		defer temporalClient.Close()
+	temporalClient, err := activityTemporalClient(a.Temporal, a.Provider)
+	if err != nil {
+		return err
 	}
 
 	taskQueue := a.TaskQueue
 	if taskQueue == "" {
 		taskQueue = workflows.TaskQueue
 	}
-	_, err := temporalClient.SignalWithStartWorkflow(ctx, workflows.LeaderboardWorkflowID,
+	_, err = temporalClient.SignalWithStartWorkflow(ctx, workflows.LeaderboardWorkflowID,
 		workflows.SignalLeaderboardScore, entry, client.StartWorkflowOptions{
 			ID:                       workflows.LeaderboardWorkflowID,
 			TaskQueue:                taskQueue,

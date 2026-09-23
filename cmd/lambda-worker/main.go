@@ -30,16 +30,18 @@ func main() {
 		if options.TaskQueue == "" {
 			options.TaskQueue = workflows.TaskQueue
 		}
+		temporalClients := activities.NewTemporalClientProvider(options.ClientOptions)
+		options.OnShutdown(temporalClients.Close)
 		workflows.Register(options, true)
 		options.RegisterActivity(&activities.Campaigns{
-			ClientOptions: options.ClientOptions,
-			TaskQueue:     options.TaskQueue,
+			Provider:  temporalClients,
+			TaskQueue: options.TaskQueue,
 		})
 		options.RegisterActivity(&activities.DailyChallenges{})
-		options.RegisterActivity(&activities.Points{ClientOptions: options.ClientOptions})
+		options.RegisterActivity(&activities.Points{Provider: temporalClients})
 		options.RegisterActivity(&activities.Leaderboard{
-			ClientOptions: options.ClientOptions,
-			TaskQueue:     options.TaskQueue,
+			Provider:  temporalClients,
+			TaskQueue: options.TaskQueue,
 		})
 		return nil
 	})

@@ -20,14 +20,17 @@ const (
 
 	QueryCampaignSummary             = "campaign-summary"
 	QueryCampaignView                = "campaign-view"
+	QueryCatalog                     = "catalog"
+	QueryCatalogWordflowLevel        = "catalog-wordflow-level"
 	QueryDailyWordflowChallengeState = "daily-wordflow-challenge-state"
 	QueryWordflowLevel               = "wordflow-level"
 	QueryPlayerState                 = "player-state"
 	QueryWordflowLevelState          = "wordflow-level-state"
 	QueryLeaderboard                 = "leaderboard"
 
-	UpdateOpenCatalog      = "open-catalog"
-	UpdateRegisterCampaign = "register-campaign"
+	UpdateOpenCatalog        = "open-catalog"
+	UpdateRegisterCampaign   = "register-campaign"
+	UpdateUnregisterCampaign = "unregister-campaign"
 	// Keep the existing wire name so accounts pinned to older Workers can log in.
 	UpdateAuthenticatePlayer = "open-session"
 	UpdateStartLevel         = "start-level"
@@ -35,10 +38,10 @@ const (
 	UpdateBuyStreakFreeze    = "buy-streak-freeze"
 	UpdateSubmitGuess        = "submit-guess"
 	UpdateUseHint            = "use-hint"
-	UpdateShuffle            = "shuffle"
 	SignalLeaderboardScore   = "record-score"
 
 	ActivityRegisterCampaign               = "RegisterCampaign"
+	ActivityUnregisterCampaign             = "UnregisterCampaign"
 	ActivityGenerateDailyWordflowChallenge = "GenerateDailyWordflowChallenge"
 	ActivityResolveWordflowLevel           = "ResolveWordflowLevel"
 	ActivitySpendPoints                    = "SpendPoints"

@@ -14,14 +14,28 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.7"
     }
+    temporalcloud = {
+      source  = "temporalio/temporalcloud"
+      version = "~> 1.9"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.13"
+    }
   }
 }
 
 provider "aws" {
+  region = var.aws_region
+
   default_tags {
     tags = {
       Application = var.project_name
       ManagedBy   = "Terraform"
     }
   }
+}
+
+provider "temporalcloud" {
+  allowed_account_id = var.temporal_account_id
 }

@@ -6,17 +6,12 @@ data "external" "git" {
   working_dir = local.repo_root
 }
 
-data "aws_route53_zone" "public" {
-  name         = var.hosted_zone_name
-  private_zone = false
-}
-
 locals {
   repo_root            = abspath("${path.module}/../..")
   dist_dir             = abspath("${path.module}/dist")
-  worker_function_name = "${var.project_name}-worker"
-  api_function_name    = "${var.project_name}-api"
-  worker_build_id      = data.external.git.result.sha
+  stack_name           = "${var.project_name}-${random_string.stack_suffix.result}"
+  worker_function_name = "${local.stack_name}-worker"
+  api_function_name    = "${local.stack_name}-api"
   lambda_architectures = var.lambda_architecture == "amd64" ? ["x86_64"] : ["arm64"]
   temporal_principal_arns = [
     "arn:aws:iam::902542641901:role/wci-lambda-invoke",
@@ -30,9 +25,53 @@ locals {
     tolist(fileset(local.repo_root, "internal/**")),
     ["go.mod", "go.sum", "deploy/terraform/scripts/build.sh"],
   ))
-  source_hash = base64sha256(join("", [
+  source_manifest = join("", [
     for file in local.source_files : "${file}:${filesha256("${local.repo_root}/${file}")}"
-  ]))
+  ])
+  source_fingerprint = sha256(local.source_manifest)
+  source_hash        = base64sha256(local.source_manifest)
+  worker_build_id    = "git-${substr(data.external.git.result.sha, 0, 12)}-${substr(local.source_fingerprint, 0, 12)}"
+}
+
+resource "random_string" "stack_suffix" {
+  length  = 8
+  lower   = true
+  numeric = true
+  special = false
+  upper   = false
+}
+
+resource "time_static" "created" {}
+
+resource "temporalcloud_namespace" "wordflow" {
+  name           = local.stack_name
+  regions        = [var.temporal_region]
+  api_key_auth   = true
+  retention_days = 1
+  description    = "Ephemeral Wordflow end-to-end test stack"
+
+  namespace_lifecycle = {
+    enable_delete_protection = false
+  }
+}
+
+resource "temporalcloud_service_account" "wordflow" {
+  name        = local.stack_name
+  description = "Runtime identity for the ephemeral Wordflow stack"
+
+  namespace_scoped_access = {
+    namespace_id = temporalcloud_namespace.wordflow.id
+    permission   = "admin"
+  }
+}
+
+resource "temporalcloud_apikey" "wordflow" {
+  display_name = local.stack_name
+  description  = "Runtime key for the ephemeral Wordflow stack"
+  owner_type   = "service-account"
+  owner_id     = temporalcloud_service_account.wordflow.id
+  expiry_time  = timeadd(time_static.created.rfc3339, var.runtime_api_key_ttl)
+  disabled     = false
 }
 
 resource "terraform_data" "build" {
@@ -56,15 +95,15 @@ resource "random_password" "session_jwt_secret" {
 }
 
 resource "aws_secretsmanager_secret" "temporal_api_key" {
-  name                    = "${var.project_name}/temporal-api-key"
-  description             = "Temporal Cloud API key for ${var.temporal_namespace}"
-  recovery_window_in_days = 7
+  name                    = "${local.stack_name}/temporal-api-key"
+  description             = "Temporal Cloud API key for ${temporalcloud_namespace.wordflow.id}"
+  recovery_window_in_days = 0
 }
 
 resource "terraform_data" "temporal_api_key" {
   triggers_replace = [
     aws_secretsmanager_secret.temporal_api_key.id,
-    var.temporal_api_key_revision,
+    temporalcloud_apikey.wordflow.id,
   ]
 
   provisioner "local-exec" {
@@ -72,7 +111,7 @@ resource "terraform_data" "temporal_api_key" {
     environment = {
       AWS_REGION       = data.aws_region.current.region
       SECRET_ID        = aws_secretsmanager_secret.temporal_api_key.id
-      TEMPORAL_API_KEY = var.temporal_api_key
+      TEMPORAL_API_KEY = temporalcloud_apikey.wordflow.token
     }
   }
 }
@@ -88,7 +127,7 @@ data "aws_iam_policy_document" "lambda_assume_role" {
 }
 
 resource "aws_iam_role" "lambda_execution" {
-  name               = "${var.project_name}-lambda-execution"
+  name               = "${local.stack_name}-lambda-execution"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 }
 
@@ -136,9 +175,9 @@ resource "aws_lambda_function" "worker" {
 
   environment {
     variables = {
-      TEMPORAL_ADDRESS           = var.temporal_address
+      TEMPORAL_ADDRESS           = temporalcloud_namespace.wordflow.endpoints.grpc_address
       TEMPORAL_API_KEY_SECRET_ID = aws_secretsmanager_secret.temporal_api_key.id
-      TEMPORAL_NAMESPACE         = var.temporal_namespace
+      TEMPORAL_NAMESPACE         = temporalcloud_namespace.wordflow.id
       TEMPORAL_TASK_QUEUE        = var.task_queue
       TEMPORAL_WORKER_BUILD_ID   = local.worker_build_id
     }
@@ -153,6 +192,14 @@ resource "aws_lambda_function" "worker" {
   ]
 }
 
+resource "aws_lambda_provisioned_concurrency_config" "worker" {
+  count = var.worker_provisioned_concurrency > 0 ? 1 : 0
+
+  function_name                     = aws_lambda_function.worker.function_name
+  qualifier                         = aws_lambda_function.worker.version
+  provisioned_concurrent_executions = var.worker_provisioned_concurrency
+}
+
 resource "aws_lambda_function" "api" {
   function_name = local.api_function_name
   description   = "Temporal Wordflow web app and API ${local.worker_build_id}"
@@ -161,7 +208,7 @@ resource "aws_lambda_function" "api" {
   handler       = "bootstrap"
   runtime       = "provided.al2023"
   architectures = local.lambda_architectures
-  memory_size   = 512
+  memory_size   = var.api_memory_size
   timeout       = 30
   publish       = true
 
@@ -170,11 +217,11 @@ resource "aws_lambda_function" "api" {
   environment {
     variables = {
       SESSION_JWT_SECRET         = random_password.session_jwt_secret.result
-      TEMPORAL_ADDRESS           = var.temporal_address
+      TEMPORAL_ADDRESS           = temporalcloud_namespace.wordflow.endpoints.grpc_address
       TEMPORAL_API_KEY_SECRET_ID = aws_secretsmanager_secret.temporal_api_key.id
-      TEMPORAL_NAMESPACE         = var.temporal_namespace
+      TEMPORAL_NAMESPACE         = temporalcloud_namespace.wordflow.id
       TEMPORAL_TASK_QUEUE        = var.task_queue
-      TEMPORAL_WEB_UI_NAMESPACE  = var.temporal_namespace
+      TEMPORAL_WEB_UI_NAMESPACE  = temporalcloud_namespace.wordflow.id
       TEMPORAL_WEB_UI_URL        = "https://cloud.temporal.io"
     }
   }
@@ -195,6 +242,14 @@ resource "aws_lambda_alias" "api" {
   function_version = aws_lambda_function.api.version
 }
 
+resource "aws_lambda_provisioned_concurrency_config" "api" {
+  count = var.api_provisioned_concurrency > 0 ? 1 : 0
+
+  function_name                     = aws_lambda_function.api.function_name
+  qualifier                         = aws_lambda_alias.api.name
+  provisioned_concurrent_executions = var.api_provisioned_concurrency
+}
+
 data "aws_iam_policy_document" "temporal_assume_role" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -211,7 +266,7 @@ data "aws_iam_policy_document" "temporal_assume_role" {
 }
 
 resource "aws_iam_role" "temporal_invocation" {
-  name               = "${var.project_name}-temporal-invocation"
+  name               = "${local.stack_name}-temporal-invocation"
   description        = "Allows Temporal Cloud to invoke the Wordflow Worker Lambda"
   assume_role_policy = data.aws_iam_policy_document.temporal_assume_role.json
 }
@@ -238,6 +293,7 @@ resource "aws_iam_role_policy" "temporal_invocation" {
 resource "terraform_data" "temporal_worker_version" {
   triggers_replace = [
     local.worker_build_id,
+    filesha256("${path.module}/scripts/register-worker.sh"),
     aws_lambda_function.worker.qualified_arn,
     aws_iam_role.temporal_invocation.arn,
     random_uuid.temporal_external_id.result,
@@ -246,14 +302,14 @@ resource "terraform_data" "temporal_worker_version" {
   provisioner "local-exec" {
     command = "${path.module}/scripts/register-worker.sh"
     environment = {
-      DEPLOYMENT_NAME     = var.project_name
+      DEPLOYMENT_NAME     = var.worker_deployment_name
       EXTERNAL_ID         = random_uuid.temporal_external_id.result
       INVOCATION_ROLE_ARN = aws_iam_role.temporal_invocation.arn
       LAMBDA_FUNCTION_ARN = aws_lambda_function.worker.qualified_arn
       TASK_QUEUE          = var.task_queue
-      TEMPORAL_ADDRESS    = var.temporal_address
-      TEMPORAL_API_KEY    = var.temporal_api_key
-      TEMPORAL_NAMESPACE  = var.temporal_namespace
+      TEMPORAL_ADDRESS    = temporalcloud_namespace.wordflow.endpoints.grpc_address
+      TEMPORAL_API_KEY    = temporalcloud_apikey.wordflow.token
+      TEMPORAL_NAMESPACE  = temporalcloud_namespace.wordflow.id
       WORKER_BUILD_ID     = local.worker_build_id
     }
   }
@@ -262,7 +318,10 @@ resource "terraform_data" "temporal_worker_version" {
 }
 
 resource "terraform_data" "palm_springs_campaign" {
-  triggers_replace = [filesha256("${path.module}/campaigns/palm-springs-offsite-2026.json")]
+  triggers_replace = [
+    filesha256("${path.module}/campaigns/palm-springs-offsite-2026.json"),
+    filesha256("${path.module}/scripts/start-campaign.sh"),
+  ]
 
   provisioner "local-exec" {
     command = "${path.module}/scripts/start-campaign.sh"
@@ -270,9 +329,32 @@ resource "terraform_data" "palm_springs_campaign" {
       CAMPAIGN_FILE      = "${path.module}/campaigns/palm-springs-offsite-2026.json"
       CAMPAIGN_ID        = "palm-springs-offsite-2026"
       TASK_QUEUE         = var.task_queue
-      TEMPORAL_ADDRESS   = var.temporal_address
-      TEMPORAL_API_KEY   = var.temporal_api_key
-      TEMPORAL_NAMESPACE = var.temporal_namespace
+      TEMPORAL_ADDRESS   = temporalcloud_namespace.wordflow.endpoints.grpc_address
+      TEMPORAL_API_KEY   = temporalcloud_apikey.wordflow.token
+      TEMPORAL_NAMESPACE = temporalcloud_namespace.wordflow.id
+    }
+  }
+
+  depends_on = [terraform_data.temporal_worker_version]
+}
+
+resource "terraform_data" "temporal_foundations_campaign" {
+  triggers_replace = [
+    local.source_fingerprint,
+    filesha256("${local.repo_root}/internal/bootstrap/temporal-foundations.json"),
+    filesha256("${path.module}/scripts/start-default-campaign.sh"),
+  ]
+
+  provisioner "local-exec" {
+    command = "${path.module}/scripts/start-default-campaign.sh"
+    environment = {
+      CAMPAIGN_FILE      = "${local.repo_root}/internal/bootstrap/temporal-foundations.json"
+      CAMPAIGN_ID        = "temporal-foundations"
+      REPO_ROOT          = local.repo_root
+      TASK_QUEUE         = var.task_queue
+      TEMPORAL_ADDRESS   = temporalcloud_namespace.wordflow.endpoints.grpc_address
+      TEMPORAL_API_KEY   = temporalcloud_apikey.wordflow.token
+      TEMPORAL_NAMESPACE = temporalcloud_namespace.wordflow.id
     }
   }
 
@@ -280,7 +362,7 @@ resource "terraform_data" "palm_springs_campaign" {
 }
 
 resource "aws_apigatewayv2_api" "web" {
-  name          = var.project_name
+  name          = local.stack_name
   protocol_type = "HTTP"
 }
 
@@ -312,62 +394,4 @@ resource "aws_lambda_permission" "api_gateway" {
   qualifier     = aws_lambda_alias.api.name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.web.execution_arn}/*/*"
-}
-
-resource "aws_acm_certificate" "web" {
-  domain_name       = var.domain_name
-  validation_method = "DNS"
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_route53_record" "certificate_validation" {
-  for_each = {
-    for option in aws_acm_certificate.web.domain_validation_options : option.domain_name => {
-      name   = option.resource_record_name
-      record = option.resource_record_value
-      type   = option.resource_record_type
-    }
-  }
-
-  zone_id = data.aws_route53_zone.public.zone_id
-  name    = each.value.name
-  type    = each.value.type
-  ttl     = 60
-  records = [each.value.record]
-}
-
-resource "aws_acm_certificate_validation" "web" {
-  certificate_arn         = aws_acm_certificate.web.arn
-  validation_record_fqdns = [for record in aws_route53_record.certificate_validation : record.fqdn]
-}
-
-resource "aws_apigatewayv2_domain_name" "web" {
-  domain_name = var.domain_name
-
-  domain_name_configuration {
-    certificate_arn = aws_acm_certificate_validation.web.certificate_arn
-    endpoint_type   = "REGIONAL"
-    security_policy = "TLS_1_2"
-  }
-}
-
-resource "aws_apigatewayv2_api_mapping" "web" {
-  api_id      = aws_apigatewayv2_api.web.id
-  domain_name = aws_apigatewayv2_domain_name.web.id
-  stage       = aws_apigatewayv2_stage.web.id
-}
-
-resource "aws_route53_record" "web" {
-  zone_id = data.aws_route53_zone.public.zone_id
-  name    = var.domain_name
-  type    = "A"
-
-  alias {
-    name                   = aws_apigatewayv2_domain_name.web.domain_name_configuration[0].target_domain_name
-    zone_id                = aws_apigatewayv2_domain_name.web.domain_name_configuration[0].hosted_zone_id
-    evaluate_target_health = false
-  }
 }

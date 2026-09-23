@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/awslabs/aws-lambda-go-api-proxy/httpadapter"
 	"github.com/mjones/temporal-word-game/internal/api"
-	"github.com/mjones/temporal-word-game/internal/bootstrap"
 	"github.com/mjones/temporal-word-game/internal/temporalconfig"
 	"github.com/mjones/temporal-word-game/internal/workflows"
 	"go.temporal.io/sdk/client"
@@ -27,9 +26,6 @@ func main() {
 	}
 
 	taskQueue := env("TEMPORAL_TASK_QUEUE", workflows.TaskQueue)
-	if _, err := bootstrap.StartDefaultCampaign(ctx, temporalClient, taskQueue); err != nil {
-		log.Fatal(err)
-	}
 	temporalNamespace := env("TEMPORAL_WEB_UI_NAMESPACE", clientOptions.Namespace)
 	sessionJWTSecret := os.Getenv("SESSION_JWT_SECRET")
 	if sessionJWTSecret == "" {

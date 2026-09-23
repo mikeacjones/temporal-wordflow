@@ -32,15 +32,8 @@ type GameSummary struct {
 	Description string `json:"description"`
 }
 
-type Registration struct {
-	CampaignID string      `json:"campaignId"`
-	WorkflowID string      `json:"workflowId"`
-	Game       GameSummary `json:"game"`
-}
-
 type CatalogView struct {
-	Games     []GameSummary  `json:"games"`
-	Campaigns []Registration `json:"campaigns"`
+	Campaigns []View `json:"campaigns"`
 }
 
 type RequiredLevel struct {

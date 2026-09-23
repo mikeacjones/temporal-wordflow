@@ -17,6 +17,7 @@ type WordflowLevelWorkflowInput struct {
 	PlayerID   string              `json:"playerId,omitempty"`
 	CampaignID string              `json:"campaignId,omitempty"`
 	Puzzle     game.Puzzle         `json:"puzzle,omitempty"`
+	StartedAt  time.Time           `json:"startedAt,omitempty"`
 	State      *WordflowLevelState `json:"state,omitempty"`
 }
 
@@ -27,7 +28,6 @@ type WordflowLevelState struct {
 	CampaignID       string             `json:"campaignId"`
 	Puzzle           game.Puzzle        `json:"puzzle"`
 	StartedAt        time.Time          `json:"startedAt"`
-	Letters          string             `json:"letters"`
 	FoundAnswers     []string           `json:"foundAnswers"`
 	RejectedWords    []string           `json:"rejectedWords"`
 	RevealedCells    []game.Position    `json:"revealedCells"`
@@ -42,7 +42,6 @@ type WordflowLevelState struct {
 	CompletedAt      time.Time          `json:"completedAt"`
 	TimedOutAt       time.Time          `json:"timedOutAt,omitempty"`
 	Score            game.GameScore     `json:"score"`
-	ShuffleCount     int                `json:"shuffleCount"`
 }
 
 type SubmitGuessInput struct {
@@ -52,8 +51,6 @@ type SubmitGuessInput struct {
 type UseHintInput struct {
 	Hint game.HintType `json:"hint"`
 }
-
-type ShuffleInput struct{}
 
 var speedBonusPoints = []int{10, 7, 4}
 
@@ -178,27 +175,6 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 		return campaign.LevelResult{}, err
 	}
 
-	if err := workflow.SetUpdateHandler(ctx, UpdateShuffle, func(updateCtx workflow.Context, _ ShuffleInput) (game.GameView, error) {
-		if err := lock.Lock(updateCtx); err != nil {
-			return game.GameView{}, err
-		}
-		defer lock.Unlock()
-		if finishLevelIfExpired(state, workflow.Now(updateCtx)) {
-			changed.SendAsync(true)
-			return wordflowLevelView(state), nil
-		}
-		if state.Complete {
-			return wordflowLevelView(state), nil
-		}
-
-		state.ShuffleCount++
-		state.Letters = shuffleLetters(state.Puzzle.Letters, state.ShuffleCount)
-		changed.SendAsync(true)
-		return wordflowLevelView(state), nil
-	}); err != nil {
-		return campaign.LevelResult{}, err
-	}
-
 	var deadline workflow.Future
 	if !state.Complete && !state.TimedOut {
 		if expiresAt := wordflowLevelExpiresAt(state); expiresAt != nil {
@@ -228,7 +204,9 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 			if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 				return campaign.LevelResult{}, err
 			}
-			return campaign.LevelResult{}, continueWordflowLevelAsNew(ctx, state)
+			return campaign.LevelResult{}, workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{
+				InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
+			}, WordflowLevelWorkflowName, WordflowLevelWorkflowInput{State: state})
 		}
 	}
 
@@ -271,14 +249,21 @@ func initialWordflowLevelState(ctx workflow.Context, input WordflowLevelWorkflow
 		return state
 	}
 
-	now := workflow.Now(ctx)
+	startedAt := input.StartedAt
+	if startedAt.IsZero() {
+		startedAt = workflow.Now(ctx)
+	}
+	return newWordflowLevelState(workflow.GetInfo(ctx).WorkflowExecution.ID,
+		input.PlayerID, input.CampaignID, input.Puzzle, startedAt)
+}
+
+func newWordflowLevelState(workflowID, playerID, campaignID string, puzzle game.Puzzle, startedAt time.Time) *WordflowLevelState {
 	return &WordflowLevelState{
-		WorkflowID: workflow.GetInfo(ctx).WorkflowExecution.ID,
-		PlayerID:   input.PlayerID,
-		CampaignID: input.CampaignID,
-		Puzzle:     input.Puzzle,
-		StartedAt:  now,
-		Letters:    input.Puzzle.Letters,
+		WorkflowID: workflowID,
+		PlayerID:   playerID,
+		CampaignID: campaignID,
+		Puzzle:     puzzle,
+		StartedAt:  startedAt,
 		Hints:      game.HintInventory{Letters: 2, Brushes: 1, Words: 1},
 	}
 }
@@ -292,25 +277,18 @@ func wordflowLevelView(state *WordflowLevelState) game.GameView {
 	foundCells := map[game.Position]bool{}
 	cells := map[game.Position]string{}
 	positions := make([]game.Position, 0)
-	words := make([]game.WordView, 0, len(state.Puzzle.Words))
 	for _, placed := range state.Puzzle.Words {
 		found := hasAnswer(state.FoundAnswers, placed.Answer)
-		wordView := game.WordView{
-			Row: placed.Row, Col: placed.Col, Direction: placed.Direction,
-			Length: len(placed.Answer), Found: found,
-		}
 		for index, letter := range placed.Answer {
 			position := positionFor(placed, index)
 			if _, present := cells[position]; !present {
 				positions = append(positions, position)
 			}
 			cells[position] = string(letter)
-			wordView.Cells = append(wordView.Cells, position)
 			if found {
 				foundCells[position] = true
 			}
 		}
-		words = append(words, wordView)
 	}
 
 	sort.Slice(positions, func(i, j int) bool {
@@ -337,9 +315,9 @@ func wordflowLevelView(state *WordflowLevelState) game.GameView {
 	}
 
 	view := game.GameView{
-		WorkflowID: state.WorkflowID, PlayerID: state.PlayerID, CampaignID: state.CampaignID,
-		Level: state.Puzzle.Level, Title: state.Puzzle.Title, Letters: state.Letters,
-		Cells: cellViews, Words: words, FoundWords: len(state.FoundAnswers), TotalWords: len(state.Puzzle.Words),
+		CampaignID: state.CampaignID,
+		Level:      state.Puzzle.Level, Title: state.Puzzle.Title, Letters: state.Puzzle.Letters,
+		Cells: cellViews, FoundWords: len(state.FoundAnswers), TotalWords: len(state.Puzzle.Words),
 		Attempts: state.Attempts, RejectedWords: append([]string(nil), state.RejectedWords...),
 		SpeedBonuses: speedBonusTiers(state.StartedAt, len(state.Puzzle.Words)),
 		HintBonus:    hintBonusFor(state), AccuracyBonus: accuracyBonusFor(state.IncorrectGuesses), Hints: state.Hints,
@@ -348,8 +326,6 @@ func wordflowLevelView(state *WordflowLevelState) game.GameView {
 		SpecialEvent: state.Puzzle.SpecialEvent,
 	}
 	if state.Complete {
-		completedAt := state.CompletedAt
-		view.CompletedAt = &completedAt
 		score := state.Score
 		view.Score = &score
 	}
@@ -655,30 +631,7 @@ func canSpell(word, letters string) bool {
 	return true
 }
 
-func shuffleLetters(letters string, count int) string {
-	runes := []rune(strings.ToUpper(letters))
-	if len(runes) < 2 {
-		return strings.ToUpper(letters)
-	}
-	shift := count % len(runes)
-	runes = append(append([]rune(nil), runes[shift:]...), runes[:shift]...)
-	if count%2 == 1 {
-		for left, right := 0, len(runes)-1; left < right; left, right = left+1, right-1 {
-			runes[left], runes[right] = runes[right], runes[left]
-		}
-	}
-	return string(runes)
-}
-
 func shouldContinueWordflowLevel(ctx workflow.Context) bool {
 	return workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 		workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged()
-}
-
-func continueWordflowLevelAsNew(ctx workflow.Context, state *WordflowLevelState) error {
-	options := workflow.ContinueAsNewErrorOptions{}
-	if workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
-		options.InitialVersioningBehavior = workflow.ContinueAsNewVersioningBehaviorAutoUpgrade
-	}
-	return workflow.NewContinueAsNewErrorWithOptions(ctx, options, WordflowLevelWorkflowName, WordflowLevelWorkflowInput{State: state})
 }

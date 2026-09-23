@@ -1,7 +1,9 @@
 let player;
 let catalog;
 let currentGame;
+let letterOrder = "";
 let selectedIndexes = [];
+let gameMutationPending = false;
 let completionRefresh;
 let completionAction;
 let noticeTimer;
@@ -31,6 +33,24 @@ async function api(path, options = {}) {
     throw error;
   }
   return body;
+}
+
+async function withPendingButton(button, label, action) {
+  if (button.getAttribute("aria-busy") === "true") return undefined;
+  const previousLabel = button.textContent;
+  const previouslyDisabled = button.disabled;
+  button.disabled = true;
+  button.classList.add("pending");
+  button.setAttribute("aria-busy", "true");
+  button.textContent = label;
+  try {
+    return await action();
+  } finally {
+    button.classList.remove("pending");
+    button.removeAttribute("aria-busy");
+    button.textContent = previousLabel;
+    button.disabled = previouslyDisabled;
+  }
 }
 
 async function openSession() {
@@ -69,6 +89,7 @@ async function logOut() {
   player = undefined;
   catalog = undefined;
   currentGame = undefined;
+  letterOrder = "";
   showAuthentication();
 }
 
@@ -86,6 +107,8 @@ function showAuthentication() {
   elements.complete.hidden = true;
   elements["player-name"].hidden = true;
   elements["player-workflow"].hidden = true;
+  elements["player-workflow"].removeAttribute("href");
+  elements["player-workflow"].setAttribute("aria-disabled", "true");
   elements.logout.hidden = true;
 }
 
@@ -108,9 +131,10 @@ async function showPlayer(initialCatalog, initialGame) {
   elements["player-name"].hidden = false;
   elements["player-name"].textContent = player.displayName;
   elements["player-workflow"].hidden = false;
+  elements["player-workflow"].href = "/api/me/workflow-link";
+  elements["player-workflow"].removeAttribute("aria-disabled");
   elements.logout.hidden = false;
   renderPlayer();
-  loadWorkflowLink(elements["player-workflow"], "/api/me/workflow-link").catch(showError);
   if (player.activeGame) {
     await resumeGame(initialGame);
   } else {
@@ -237,15 +261,15 @@ function renderDailyChallenge(campaign) {
   if (terminal) {
     action.className = "quiet";
     action.textContent = campaign.failed ? "View solution" : "View result";
-    action.addEventListener("click", () => reviewDailyOutcome(campaign).catch(showError));
+    action.addEventListener("click", () => withPendingButton(action, "Loading result…", () => reviewDailyOutcome(campaign)).catch(showError));
   } else if (activeLevel) {
     action.className = "primary";
     action.textContent = `Resume level ${activeLevel.level}`;
-    action.addEventListener("click", () => resumeGame().catch(showError));
+    action.addEventListener("click", () => withPendingButton(action, "Resuming…", () => resumeGame()).catch(showError));
   } else if (availableLevel) {
     action.className = "primary";
     action.textContent = campaign.completedLevels ? "Continue challenge" : "Play Daily Challenge!";
-    action.addEventListener("click", () => startGame(campaign.campaignId, availableLevel.level).catch(showError));
+    action.addEventListener("click", () => withPendingButton(action, "Starting…", () => startGame(campaign.campaignId, availableLevel.level)).catch(showError));
   } else {
     action.className = "quiet";
     action.textContent = campaign.lockedReason || "Challenge unavailable";
@@ -322,10 +346,10 @@ function renderCampaign(campaign) {
   action.className = activeLevel || availableLevel ? "primary" : "quiet";
   if (activeLevel) {
     action.textContent = `Resume level ${activeLevel.level}`;
-    action.addEventListener("click", () => resumeGame().catch(showError));
+    action.addEventListener("click", () => withPendingButton(action, "Resuming…", () => resumeGame()).catch(showError));
   } else if (availableLevel) {
     action.textContent = `${campaign.completedLevels ? "Continue" : "Start"} campaign`;
-    action.addEventListener("click", () => startGame(campaign.campaignId, availableLevel.level).catch(showError));
+    action.addEventListener("click", () => withPendingButton(action, "Starting…", () => startGame(campaign.campaignId, availableLevel.level)).catch(showError));
   } else if (campaign.completedLevels === campaign.totalLevels) {
     action.textContent = "Campaign complete";
     action.disabled = true;
@@ -337,7 +361,7 @@ function renderCampaign(campaign) {
     action.dataset.unlocksAt = nextLevel.unlockedAt;
     action.dataset.level = nextLevel.level;
     action.title = new Date(nextLevel.unlockedAt).toLocaleString();
-    action.addEventListener("click", () => startGame(campaign.campaignId, nextLevel.level).catch(showError));
+    action.addEventListener("click", () => withPendingButton(action, "Starting…", () => startGame(campaign.campaignId, nextLevel.level)).catch(showError));
     action.disabled = true;
   } else {
     action.textContent = campaign.lockedReason || "Next level locked";
@@ -444,31 +468,36 @@ function formatCampaignCountdown(milliseconds) {
 }
 
 async function startGame(campaignId, level) {
-  player = await api(`/api/me/campaigns/${campaignId}/levels`, {
+  const started = await api(`/api/me/campaigns/${campaignId}/levels`, {
     method: "POST",
     body: JSON.stringify({ requestId: requestID(), level }),
   });
-  await resumeGame();
+  player = started.player;
+  await resumeGame(started.game);
   renderPlayer();
 }
 
 async function resumeGame(initialGame) {
   const active = player.activeGame;
   currentGame = initialGame || await api(`/api/me/campaigns/${active.campaignId}/levels/${active.level}`);
+  letterOrder = shuffledLetters(currentGame.letters);
   completionRefresh = undefined;
   completionAction = undefined;
   deadlineRefresh = undefined;
-  loadWorkflowLink(elements["game-workflow"], `/api/me/campaigns/${active.campaignId}/levels/${active.level}/workflow-link`).catch(showError);
+  elements["game-workflow"].href = `/api/me/campaigns/${active.campaignId}/levels/${active.level}/workflow-link`;
+  elements["game-workflow"].removeAttribute("aria-disabled");
   renderGame();
 }
 
 async function reviewDailyOutcome(campaign) {
   const level = campaign.failed ? campaign.nextLevel : campaign.totalLevels;
   currentGame = await api(`/api/me/campaigns/${campaign.campaignId}/levels/${level}`);
+  letterOrder = shuffledLetters(currentGame.letters);
   completionRefresh = undefined;
   completionAction = undefined;
   deadlineRefresh = undefined;
-  loadWorkflowLink(elements["game-workflow"], `/api/me/campaigns/${campaign.campaignId}/levels/${level}/workflow-link`).catch(showError);
+  elements["game-workflow"].href = `/api/me/campaigns/${campaign.campaignId}/levels/${level}/workflow-link`;
+  elements["game-workflow"].removeAttribute("aria-disabled");
   renderGame();
 }
 
@@ -620,7 +649,7 @@ function renderHintButton(hint, label, remaining, price) {
   const button = document.querySelector(`[data-hint="${hint}"]`);
   const paid = remaining === 0;
   button.textContent = paid ? `${label} · ${price} points` : `${label} · ${remaining} free`;
-  button.disabled = paid && player.points < price;
+  button.disabled = gameMutationPending || (paid && player.points < price);
   button.classList.toggle("paid", paid);
 }
 
@@ -644,12 +673,12 @@ function renderCrosswordInto(element, cells) {
 function renderLetters() {
   selectedIndexes = [];
   elements.guess.innerHTML = "&nbsp;";
-  const letters = [...currentGame.letters];
+  const letters = [...letterOrder];
   elements.letters.innerHTML = letters.map((letter, index) => {
     const angle = (Math.PI * 2 * index / letters.length) - Math.PI / 2;
     const left = 50 + Math.cos(angle) * 37;
     const top = 50 + Math.sin(angle) * 37;
-    return `<button class="letter" data-index="${index}" style="left:${left}%;top:${top}%">${letter}</button>`;
+    return `<button class="letter" data-index="${index}" style="left:${left}%;top:${top}%"${gameMutationPending ? " disabled" : ""}>${letter}</button>`;
   }).join("");
   elements.letters.querySelectorAll(".letter").forEach((button) => {
     button.addEventListener("click", () => selectLetter(Number(button.dataset.index)));
@@ -660,7 +689,7 @@ function selectLetter(index) {
   if (selectedIndexes.includes(index)) return;
   selectedIndexes.push(index);
   elements.letters.querySelector(`[data-index="${index}"]`).classList.add("selected");
-  elements.guess.textContent = selectedIndexes.map((i) => currentGame.letters[i]).join("");
+  elements.guess.textContent = selectedIndexes.map((i) => letterOrder[i]).join("");
 }
 
 function clearGuess() {
@@ -670,12 +699,14 @@ function clearGuess() {
 }
 
 async function submitGuess() {
-  const word = selectedIndexes.map((index) => currentGame.letters[index]).join("");
+  const word = selectedIndexes.map((index) => letterOrder[index]).join("");
   if (!word) return;
-  const result = await api(`/api/me/campaigns/${currentGame.campaignId}/levels/${currentGame.level}/guesses`, {
-    method: "POST",
-    body: JSON.stringify({ requestId: requestID(), word }),
-  });
+  const result = await withGameMutation(elements.submit, "Submitting…", () =>
+    api(`/api/me/campaigns/${currentGame.campaignId}/levels/${currentGame.level}/guesses`, {
+      method: "POST",
+      body: JSON.stringify({ requestId: requestID(), word }),
+    }));
+  if (!result) return;
   currentGame = result.game;
   showNotice({ found: "Word recorded in history.", already_found: "Already in history.", not_in_puzzle: "Not in the wordflow.", invalid_letters: "Those letters cannot make that word." }[result.outcome] || result.outcome);
   renderGame();
@@ -688,19 +719,14 @@ async function useHint(hint) {
     word: currentGame.hints.words,
   }[hint];
   const buying = remaining === 0;
+  const button = document.querySelector(`[data-hint="${hint}"]`);
+  let result;
   try {
-    const result = await api(`/api/me/campaigns/${currentGame.campaignId}/levels/${currentGame.level}/hints`, {
-      method: "POST",
-      body: JSON.stringify({ requestId: requestID(), hint }),
-    });
-    currentGame = result.game;
-    if (result.pointsRemaining !== undefined) {
-      player.points = result.pointsRemaining;
-      renderPlayer();
-    }
-    const outcome = result.outcome.replaceAll("_", " ");
-    showNotice(result.pointsSpent ? `Spent ${result.pointsSpent} points · ${outcome}` : outcome);
-    renderGame();
+    result = await withGameMutation(button, "Applying…", () =>
+      api(`/api/me/campaigns/${currentGame.campaignId}/levels/${currentGame.level}/hints`, {
+        method: "POST",
+        body: JSON.stringify({ requestId: requestID(), hint }),
+      }));
   } catch (error) {
     if (buying) {
       try {
@@ -713,6 +739,15 @@ async function useHint(hint) {
     }
     throw error;
   }
+  if (!result) return;
+  currentGame = result.game;
+  if (result.pointsRemaining !== undefined) {
+    player.points = result.pointsRemaining;
+    renderPlayer();
+  }
+  const outcome = result.outcome.replaceAll("_", " ");
+  showNotice(result.pointsSpent ? `Spent ${result.pointsSpent} points · ${outcome}` : outcome);
+  renderGame();
 }
 
 async function buyStreakFreeze() {
@@ -720,17 +755,60 @@ async function buyStreakFreeze() {
     method: "POST",
     body: JSON.stringify({ requestId: requestID() }),
   });
-  renderPlayer();
-  if (currentGame) renderGame();
-  showNotice("Streak freeze ready.");
+  return player;
 }
 
-async function shuffle() {
-  currentGame = await api(`/api/me/campaigns/${currentGame.campaignId}/levels/${currentGame.level}/shuffle`, {
-    method: "POST",
-    body: JSON.stringify({ requestId: requestID() }),
-  });
-  renderGame();
+async function withGameMutation(button, label, action) {
+  if (gameMutationPending) return undefined;
+  gameMutationPending = true;
+  const previousLabel = button.textContent;
+  setGameControlsPending(true);
+  button.classList.add("pending");
+  button.setAttribute("aria-busy", "true");
+  button.textContent = label;
+  try {
+    return await action();
+  } finally {
+    gameMutationPending = false;
+    button.classList.remove("pending");
+    button.removeAttribute("aria-busy");
+    button.textContent = previousLabel;
+    setGameControlsPending(false);
+  }
+}
+
+function setGameControlsPending(pending) {
+  elements.game.setAttribute("aria-busy", String(pending));
+  elements.clear.disabled = pending;
+  elements.submit.disabled = pending;
+  elements.shuffle.disabled = pending;
+  elements.letters.querySelectorAll(".letter").forEach((button) => { button.disabled = pending; });
+  if (pending) {
+    document.querySelectorAll("[data-hint]").forEach((button) => { button.disabled = true; });
+    return;
+  }
+  renderHintButton("letter", "Reveal one", currentGame.hints.letters, currentGame.hintPrices.letter);
+  renderHintButton("brush", "Reveal two", currentGame.hints.brushes, currentGame.hintPrices.brush);
+  renderHintButton("word", "Resolve word", currentGame.hints.words, currentGame.hintPrices.word);
+}
+
+function shuffledLetters(letters, previous = "") {
+  let shuffled = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const characters = [...letters];
+    for (let index = characters.length - 1; index > 0; index--) {
+      const swap = Math.floor(Math.random() * (index + 1));
+      [characters[index], characters[swap]] = [characters[swap], characters[index]];
+    }
+    shuffled = characters.join("");
+    if (shuffled !== previous) break;
+  }
+  return shuffled;
+}
+
+function shuffle() {
+  letterOrder = shuffledLetters(currentGame.letters, letterOrder);
+  renderLetters();
 }
 
 function renderComplete() {
@@ -790,29 +868,28 @@ function beginCompletionRefresh() {
 }
 
 async function prepareCompletionAction() {
-  await refreshPlayerAfterCompletion();
-  const latestCatalog = await api("/api/catalog");
-  const campaign = latestCatalog.campaigns.find((item) => item.campaignId === currentGame.campaignId);
-  const nextLevel = campaign?.levels.find((level) => level.status === "available");
-  catalog = latestCatalog;
+	const campaignId = currentGame.campaignId;
+	const completion = await api(`/api/me/campaigns/${campaignId}/completion`);
+	player = completion.player;
+	renderPlayer();
+
+	const campaign = completion.campaign;
+	let campaigns = [...(catalog?.campaigns || [])];
+	const campaignIndex = campaigns.findIndex((item) => item.campaignId === campaignId);
+	if (!campaign) {
+		campaigns = campaigns.filter((item) => item.campaignId !== campaignId);
+	} else if (campaignIndex === -1) {
+		campaigns.push(campaign);
+	} else {
+		campaigns[campaignIndex] = campaign;
+	}
+	catalog = { ...(catalog || {}), campaigns };
+
+	const nextLevel = campaign?.levels.find((level) => level.status === "available");
   completionAction = nextLevel
     ? { campaignId: campaign.campaignId, level: nextLevel.level }
     : undefined;
   elements.continue.textContent = nextLevel ? `Play level ${nextLevel.level}` : "Back to campaigns";
-}
-
-async function refreshPlayerAfterCompletion() {
-  for (let attempt = 0; attempt < 40; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    const latestPlayer = await api("/api/me");
-    if (!latestPlayer.activeGame) {
-      player = latestPlayer;
-      renderPlayer();
-      loadWorkflowLink(elements["player-workflow"], "/api/me/workflow-link").catch(showError);
-      return;
-    }
-  }
-  throw new Error("The Player Workflow is still consuming the child result. Please try again.");
 }
 
 async function showNextWordflow() {
@@ -830,14 +907,6 @@ async function showNextWordflow() {
   await showCatalog(catalog);
 }
 
-async function loadWorkflowLink(element, path) {
-  element.removeAttribute("href");
-  element.setAttribute("aria-disabled", "true");
-  const result = await api(path);
-  element.href = result.url;
-  element.removeAttribute("aria-disabled");
-}
-
 function showNotice(message) {
   clearTimeout(noticeTimer);
   elements.notice.hidden = false;
@@ -845,21 +914,30 @@ function showNotice(message) {
   noticeTimer = setTimeout(() => { elements.notice.hidden = true; }, 2400);
 }
 
-elements["buy-streak-freeze"].addEventListener("click", () => buyStreakFreeze().catch(showError));
-elements["exit-game"].addEventListener("click", () => exitGame().catch(showError));
-elements.logout.addEventListener("click", () => logOut().catch(showError));
+elements["buy-streak-freeze"].addEventListener("click", () => {
+  withPendingButton(elements["buy-streak-freeze"], "Buying…", buyStreakFreeze).then((result) => {
+    if (result === undefined) return;
+    renderPlayer();
+    if (currentGame) renderGame();
+    showNotice("Streak freeze ready.");
+  }).catch(showError);
+});
+elements["exit-game"].addEventListener("click", () => withPendingButton(elements["exit-game"], "Loading…", exitGame).catch(showError));
+elements.logout.addEventListener("click", () => withPendingButton(elements.logout, "Logging out…", logOut).catch(showError));
 elements["login-form"].addEventListener("submit", (event) => {
   event.preventDefault();
-  authenticate("/api/login", event.currentTarget).catch(showError);
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  withPendingButton(button, "Logging in…", () => authenticate("/api/login", event.currentTarget)).catch(showError);
 });
 elements["signup-form"].addEventListener("submit", (event) => {
   event.preventDefault();
-  authenticate("/api/signup", event.currentTarget).catch(showError);
+  const button = event.currentTarget.querySelector("button[type=submit]");
+  withPendingButton(button, "Creating account…", () => authenticate("/api/signup", event.currentTarget)).catch(showError);
 });
 elements.clear.addEventListener("click", clearGuess);
 elements.submit.addEventListener("click", () => submitGuess().catch(showError));
-elements.shuffle.addEventListener("click", () => shuffle().catch(showError));
-elements.continue.addEventListener("click", () => showNextWordflow().catch(showError));
+elements.shuffle.addEventListener("click", shuffle);
+elements.continue.addEventListener("click", () => withPendingButton(elements.continue, "Loading…", showNextWordflow).catch(showError));
 document.querySelectorAll("[data-hint]").forEach((button) => {
   button.addEventListener("click", () => useHint(button.dataset.hint).catch(showError));
 });

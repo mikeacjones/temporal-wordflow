@@ -11,19 +11,14 @@ import (
 )
 
 type Points struct {
-	Temporal      client.Client
-	ClientOptions client.Options
+	Temporal client.Client
+	Provider *TemporalClientProvider
 }
 
 func (a *Points) SpendPoints(ctx context.Context, input workflows.SpendPointsActivityInput) (workflows.SpendPointsResult, error) {
-	temporalClient := a.Temporal
-	if temporalClient == nil {
-		var err error
-		temporalClient, err = client.Dial(a.ClientOptions)
-		if err != nil {
-			return workflows.SpendPointsResult{}, err
-		}
-		defer temporalClient.Close()
+	temporalClient, err := activityTemporalClient(a.Temporal, a.Provider)
+	if err != nil {
+		return workflows.SpendPointsResult{}, err
 	}
 
 	handle, err := temporalClient.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
