@@ -372,6 +372,42 @@ func TestAuthenticatedPlayerAcceptsOpenPlayerWorkflow(t *testing.T) {
 	require.Equal(t, "Alice", player.DisplayName)
 }
 
+func TestLeaderboardStartsFreshAfterPreviousWorkflowWasTerminated(t *testing.T) {
+	result := temporalmocks.NewEncodedValue(t)
+	result.On("Get", mock.Anything).Run(func(arguments mock.Arguments) {
+		view := arguments.Get(0).(*game.LeaderboardView)
+		*view = game.LeaderboardView{Entries: []game.LeaderboardRank{}}
+	}).Return(nil).Once()
+
+	temporalClient := temporalmocks.NewClient(t)
+	queryRequest := mock.MatchedBy(func(request *client.QueryWorkflowWithOptionsRequest) bool {
+		return request.WorkflowID == workflows.LeaderboardWorkflowID &&
+			request.QueryType == workflows.QueryLeaderboard &&
+			request.QueryRejectCondition == enums.QUERY_REJECT_CONDITION_NOT_OPEN
+	})
+	temporalClient.On("QueryWorkflowWithOptions", mock.Anything, queryRequest).
+		Return(&client.QueryWorkflowWithOptionsResponse{
+			QueryRejected: &querypb.QueryRejected{Status: enums.WORKFLOW_EXECUTION_STATUS_TERMINATED},
+		}, nil).Once()
+	temporalClient.On("ExecuteWorkflow", mock.Anything, mock.MatchedBy(func(options client.StartWorkflowOptions) bool {
+		return options.ID == workflows.LeaderboardWorkflowID &&
+			options.WorkflowIDConflictPolicy == enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING &&
+			options.WorkflowIDReusePolicy == enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
+	}), workflows.LeaderboardWorkflowName, workflows.LeaderboardWorkflowInput{}).
+		Return((client.WorkflowRun)(nil), nil).Once()
+	temporalClient.On("QueryWorkflowWithOptions", mock.Anything, queryRequest).
+		Return(&client.QueryWorkflowWithOptionsResponse{QueryResult: result}, nil).Once()
+
+	request := httptest.NewRequest("GET", "/api/leaderboard", nil)
+	response := httptest.NewRecorder()
+	server := &Server{temporal: temporalClient, taskQueue: "wordflow"}
+
+	server.getLeaderboard(response, request)
+
+	require.Equal(t, 200, response.Code)
+	require.JSONEq(t, `{"entries":[]}`, response.Body.String())
+}
+
 func jsonObject(t *testing.T, value any) map[string]json.RawMessage {
 	t.Helper()
 	encoded, err := json.Marshal(value)

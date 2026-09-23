@@ -60,6 +60,7 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 	lock := workflow.NewMutex(ctx)
 	changed := workflow.NewBufferedChannel(ctx, 1)
 	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
+	continueRequested := false
 
 	if err := workflow.SetQueryHandler(ctx, QueryWordflowLevelState, func() (game.GameView, error) {
 		return wordflowLevelView(state), nil
@@ -197,6 +198,7 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
 			var ignored struct{}
 			channel.Receive(ctx, &ignored)
+			continueRequested = true
 		})
 		if deadline != nil {
 			selector.AddFuture(deadline, func(workflow.Future) {
@@ -205,7 +207,7 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 			})
 		}
 		selector.Select(ctx)
-		if shouldContinueWordflowLevel(ctx) {
+		if shouldContinueWordflowLevel(ctx, continueRequested) {
 			if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 				return campaign.LevelResult{}, err
 			}
@@ -636,7 +638,8 @@ func canSpell(word, letters string) bool {
 	return true
 }
 
-func shouldContinueWordflowLevel(ctx workflow.Context) bool {
-	return workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
+func shouldContinueWordflowLevel(ctx workflow.Context, continueRequested bool) bool {
+	return continueRequested ||
+		workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 		workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged()
 }

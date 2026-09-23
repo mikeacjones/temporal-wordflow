@@ -39,6 +39,7 @@ func LeaderboardWorkflow(ctx workflow.Context, input LeaderboardWorkflowInput) e
 
 	scores := workflow.GetSignalChannel(ctx, SignalLeaderboardScore)
 	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
+	continueRequested := false
 	for {
 		selector := workflow.NewSelector(ctx)
 		selector.AddReceive(scores, func(channel workflow.ReceiveChannel, _ bool) {
@@ -49,9 +50,11 @@ func LeaderboardWorkflow(ctx workflow.Context, input LeaderboardWorkflowInput) e
 		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
 			var ignored struct{}
 			channel.Receive(ctx, &ignored)
+			continueRequested = true
 		})
 		selector.Select(ctx)
-		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
+		if continueRequested ||
+			workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 			workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
 			for {
 				var entry game.LeaderboardEntry

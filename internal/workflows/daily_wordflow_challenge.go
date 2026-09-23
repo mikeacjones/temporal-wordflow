@@ -55,6 +55,7 @@ func DailyWordflowChallengeWorkflow(ctx workflow.Context, input DailyWordflowCha
 		return err
 	}
 	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
+	continueRequested := false
 
 	activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout:    90 * time.Second,
@@ -83,9 +84,10 @@ func DailyWordflowChallengeWorkflow(ctx workflow.Context, input DailyWordflowCha
 				selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
 					var ignored struct{}
 					channel.Receive(ctx, &ignored)
+					continueRequested = true
 				})
 				selector.Select(ctx)
-				if shouldContinueDailyWordflowChallenge(ctx) {
+				if shouldContinueDailyWordflowChallenge(ctx, continueRequested) {
 					return continueDailyWordflowChallengeAsNew(ctx, state)
 				}
 			}
@@ -122,8 +124,9 @@ func DailyWordflowChallengeWorkflow(ctx workflow.Context, input DailyWordflowCha
 		state.NextDate = endsAt.In(torontoLocation).Format(dailyChallengeDateLayout)
 		var ignored struct{}
 		for upgrade.ReceiveAsync(&ignored) {
+			continueRequested = true
 		}
-		if shouldContinueDailyWordflowChallenge(ctx) {
+		if shouldContinueDailyWordflowChallenge(ctx, continueRequested) {
 			return continueDailyWordflowChallengeAsNew(ctx, state)
 		}
 
@@ -136,9 +139,10 @@ func DailyWordflowChallengeWorkflow(ctx workflow.Context, input DailyWordflowCha
 				selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
 					var ignored struct{}
 					channel.Receive(ctx, &ignored)
+					continueRequested = true
 				})
 				selector.Select(ctx)
-				if shouldContinueDailyWordflowChallenge(ctx) {
+				if shouldContinueDailyWordflowChallenge(ctx, continueRequested) {
 					return continueDailyWordflowChallengeAsNew(ctx, state)
 				}
 			}
@@ -207,8 +211,9 @@ func cloneDailyWordflowChallengeState(state *DailyWordflowChallengeState) DailyW
 	return clone
 }
 
-func shouldContinueDailyWordflowChallenge(ctx workflow.Context) bool {
-	return workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
+func shouldContinueDailyWordflowChallenge(ctx workflow.Context, continueRequested bool) bool {
+	return continueRequested ||
+		workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 		workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged()
 }
 

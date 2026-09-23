@@ -83,6 +83,7 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 	lock := workflow.NewMutex(ctx)
 	changed := workflow.NewBufferedChannel(ctx, 1)
 	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
+	continueRequested := false
 	var levelFuture workflow.ChildWorkflowFuture
 	var leaderboardFuture workflow.Future
 
@@ -264,13 +265,14 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
 			var ignored struct{}
 			channel.Receive(ctx, &ignored)
+			continueRequested = true
 		})
 		selector.Select(ctx)
 		if levelErr != nil {
 			return levelErr
 		}
 
-		if leaderboardFuture == nil && shouldContinuePlayer(ctx, state) {
+		if leaderboardFuture == nil && shouldContinuePlayer(ctx, state, continueRequested) {
 			if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 				return err
 			}
@@ -407,8 +409,9 @@ func joinPlayerCampaign(state *PlayerState, campaignID string, joinedAt time.Tim
 	})
 }
 
-func shouldContinuePlayer(ctx workflow.Context, state *PlayerState) bool {
-	return state.ActiveGame == nil && (workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
+func shouldContinuePlayer(ctx workflow.Context, state *PlayerState, continueRequested bool) bool {
+	return state.ActiveGame == nil && (continueRequested ||
+		workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 		workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged())
 }
 

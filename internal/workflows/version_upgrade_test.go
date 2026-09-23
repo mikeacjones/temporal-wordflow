@@ -13,7 +13,6 @@ import (
 )
 
 func requestVersionUpgrade(env *testsuite.TestWorkflowEnvironment) {
-	env.SetTargetWorkerDeploymentVersionChanged(true)
 	env.SignalWorkflow(SignalRequestVersionUpgrade, struct{}{})
 }
 

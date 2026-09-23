@@ -46,6 +46,7 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 	}
 	changed := workflow.NewBufferedChannel(ctx, 1)
 	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
+	continueRequested := false
 
 	if err := workflow.SetQueryHandler(ctx, QueryCatalog, func(input campaign.QueryInput) (campaign.CatalogView, error) {
 		// Query results are not recorded in Workflow history. Wall time keeps
@@ -127,9 +128,11 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
 			var ignored struct{}
 			channel.Receive(ctx, &ignored)
+			continueRequested = true
 		})
 		selector.Select(ctx)
-		if !workflow.GetInfo(ctx).GetContinueAsNewSuggested() &&
+		if !continueRequested &&
+			!workflow.GetInfo(ctx).GetContinueAsNewSuggested() &&
 			!workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
 			continue
 		}

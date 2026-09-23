@@ -816,13 +816,25 @@ func (s *Server) logOut(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) getLeaderboard(writer http.ResponseWriter, request *http.Request) {
-	result, err := s.temporal.QueryWorkflow(request.Context(), workflows.LeaderboardWorkflowID, "", workflows.QueryLeaderboard)
+	query := func() (*client.QueryWorkflowWithOptionsResponse, error) {
+		return s.temporal.QueryWorkflowWithOptions(request.Context(), &client.QueryWorkflowWithOptionsRequest{
+			WorkflowID:           workflows.LeaderboardWorkflowID,
+			QueryType:            workflows.QueryLeaderboard,
+			QueryRejectCondition: enums.QUERY_REJECT_CONDITION_NOT_OPEN,
+		})
+	}
+
+	response, err := query()
+	start := response == nil || response.QueryRejected != nil || response.QueryResult == nil
 	if err != nil {
 		var notFound *serviceerror.NotFound
 		if !errors.As(err, &notFound) {
 			writeTemporalError(writer, err)
 			return
 		}
+		start = true
+	}
+	if start {
 		_, err = s.temporal.ExecuteWorkflow(request.Context(), client.StartWorkflowOptions{
 			ID:                       workflows.LeaderboardWorkflowID,
 			TaskQueue:                s.taskQueue,
@@ -833,14 +845,18 @@ func (s *Server) getLeaderboard(writer http.ResponseWriter, request *http.Reques
 			writeTemporalError(writer, err)
 			return
 		}
-		result, err = s.temporal.QueryWorkflow(request.Context(), workflows.LeaderboardWorkflowID, "", workflows.QueryLeaderboard)
+		response, err = query()
 		if err != nil {
 			writeTemporalError(writer, err)
 			return
 		}
 	}
+	if response == nil || response.QueryRejected != nil || response.QueryResult == nil {
+		writeTemporalError(writer, errors.New("leaderboard workflow is not open"))
+		return
+	}
 	var view game.LeaderboardView
-	if err := result.Get(&view); err != nil {
+	if err := response.QueryResult.Get(&view); err != nil {
 		writeTemporalError(writer, err)
 		return
 	}

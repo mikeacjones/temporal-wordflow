@@ -103,6 +103,7 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 	}
 
 	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
+	continueRequested := false
 	var deadline workflow.Future
 	expired := false
 	if state.Definition.EndsAt != nil {
@@ -125,9 +126,11 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
 			var ignored struct{}
 			channel.Receive(ctx, &ignored)
+			continueRequested = true
 		})
 		selector.Select(ctx)
-		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
+		if continueRequested ||
+			workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 			workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
 			state.Registered = false
 			return workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{
