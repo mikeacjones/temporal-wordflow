@@ -84,6 +84,15 @@ async function authenticate(path, form) {
   await showPlayer(session.catalog, session.game);
 }
 
+function validateSignupPasswords(form, report = false) {
+  const password = form.elements.password;
+  const confirmation = form.elements.passwordConfirmation;
+  const matches = password.value === confirmation.value;
+  confirmation.setCustomValidity(matches ? "" : "Passwords do not match.");
+  if (report && !matches) confirmation.reportValidity();
+  return matches;
+}
+
 async function logOut() {
   await api("/api/session", { method: "DELETE" });
   player = undefined;
@@ -931,8 +940,15 @@ elements["login-form"].addEventListener("submit", (event) => {
 });
 elements["signup-form"].addEventListener("submit", (event) => {
   event.preventDefault();
-  const button = event.currentTarget.querySelector("button[type=submit]");
-  withPendingButton(button, "Creating account…", () => authenticate("/api/signup", event.currentTarget)).catch(showError);
+  const form = event.currentTarget;
+  if (!validateSignupPasswords(form, true)) return;
+  const button = form.querySelector("button[type=submit]");
+  withPendingButton(button, "Creating account…", () => authenticate("/api/signup", form)).catch(showError);
+});
+elements["signup-form"].addEventListener("input", (event) => {
+  if (event.target.name === "password" || event.target.name === "passwordConfirmation") {
+    validateSignupPasswords(event.currentTarget);
+  }
 });
 elements.clear.addEventListener("click", clearGuess);
 elements.submit.addEventListener("click", () => submitGuess().catch(showError));

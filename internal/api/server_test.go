@@ -58,9 +58,40 @@ func TestIndexWithoutSessionRendersLoginImmediately(t *testing.T) {
 	require.Contains(t, response.Body.String(), `data-session="anonymous"`)
 	require.Contains(t, response.Body.String(), `id="startup"`)
 	require.Contains(t, response.Body.String(), `id="auth" class="auth-grid"`)
+	require.Contains(t, response.Body.String(), `name="passwordConfirmation"`)
 	require.Contains(t, response.Body.String(), `property="og:url" content="https://games.example.test/"`)
 	require.Contains(t, response.Body.String(), `property="og:image" content="https://games.example.test/social-preview.png"`)
 	require.NotContains(t, response.Body.String(), "{{CANONICAL_URL}}")
+}
+
+func TestSignupRequiresMatchingPasswordConfirmation(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "mismatch",
+			body: `{"username":"alice","displayName":"Alice","password":"password123","passwordConfirmation":"password124"}`,
+		},
+		{
+			name: "missing confirmation",
+			body: `{"username":"alice","displayName":"Alice","password":"password123"}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			temporalClient := temporalmocks.NewClient(t)
+			server := &Server{temporal: temporalClient}
+			request := httptest.NewRequest("POST", "/api/signup", bytes.NewBufferString(test.body))
+			response := httptest.NewRecorder()
+
+			server.signUp(response, request)
+
+			require.Equal(t, http.StatusBadRequest, response.Code)
+			require.JSONEq(t, `{"error":"passwords do not match"}`, response.Body.String())
+		})
+	}
 }
 
 func TestSocialPreviewImageIsPublic(t *testing.T) {

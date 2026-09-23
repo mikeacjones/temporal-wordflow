@@ -138,16 +138,21 @@ func firstForwardedValue(value string) string {
 }
 
 type credentialsRequest struct {
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	DisplayName string `json:"displayName,omitempty"`
-	RequestID   string `json:"requestId"`
+	Username             string `json:"username"`
+	Password             string `json:"password"`
+	PasswordConfirmation string `json:"passwordConfirmation,omitempty"`
+	DisplayName          string `json:"displayName,omitempty"`
+	RequestID            string `json:"requestId"`
 }
 
 func (s *Server) signUp(writer http.ResponseWriter, request *http.Request) {
 	var input credentialsRequest
 	if err := decodeJSON(request, &input); err != nil {
 		writeError(writer, http.StatusBadRequest, err)
+		return
+	}
+	if input.Password != input.PasswordConfirmation {
+		writeError(writer, http.StatusBadRequest, errors.New("passwords do not match"))
 		return
 	}
 	username, err := normalizeUsername(input.Username)
