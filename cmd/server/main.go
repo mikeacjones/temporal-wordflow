@@ -24,8 +24,7 @@ func main() {
 
 	address := env("HTTP_ADDRESS", ":8080")
 	taskQueue := env("TEMPORAL_TASK_QUEUE", workflows.TaskQueue)
-	temporalUIURL := env("TEMPORAL_WEB_UI_URL", "http://localhost:8233")
-	temporalNamespace := env("TEMPORAL_WEB_UI_NAMESPACE", clientOptions.Namespace)
+	temporalNamespace := clientOptions.Namespace
 	if temporalNamespace == "" {
 		temporalNamespace = "default"
 	}
@@ -37,7 +36,7 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("web app listening on %s", address)
-	if err := http.ListenAndServe(address, api.New(temporalClient, taskQueue, temporalUIURL, temporalNamespace, sessionJWTSecret)); err != nil {
+	if err := http.ListenAndServe(address, api.New(temporalClient, taskQueue, temporalNamespace, sessionJWTSecret)); err != nil {
 		log.Fatal(err)
 	}
 }

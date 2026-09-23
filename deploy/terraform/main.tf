@@ -221,8 +221,6 @@ resource "aws_lambda_function" "api" {
       TEMPORAL_API_KEY_SECRET_ID = aws_secretsmanager_secret.temporal_api_key.id
       TEMPORAL_NAMESPACE         = temporalcloud_namespace.wordflow.id
       TEMPORAL_TASK_QUEUE        = var.task_queue
-      TEMPORAL_WEB_UI_NAMESPACE  = temporalcloud_namespace.wordflow.id
-      TEMPORAL_WEB_UI_URL        = "https://cloud.temporal.io"
     }
   }
 

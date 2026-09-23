@@ -212,6 +212,22 @@ Then open <http://localhost:8080>. The Temporal UI is at
 <http://localhost:8233>. The standalone event leaderboard is at
 <http://localhost:8080/leaderboard>.
 
+### Read-only Workflow Explorer
+
+The web app includes an application-aware Workflow Explorer at
+<http://localhost:8080/workflows/>.
+It reads Visibility, Describe, and Event History data without issuing Workflow
+Queries, Updates, or Signals. Anonymous visitors can inspect sanitized catalog,
+campaign, daily-generator, and leaderboard executions. A browser carrying a
+valid Wordflow session cookie can also inspect that player's Player and Level
+Workflows. Event details are decoded and sanitized at the API boundary;
+credentials, puzzle answers, headers, identities, failure messages, memos, and
+search attributes are never sent to the browser.
+
+The explorer is served by the same web/API process and uses the same session
+cookie, but neither the page nor its read-only endpoints execute or modify
+Workflow state.
+
 `make temporal` stores the development Temporal database in `.temporal/`.
 That SQLite file belongs to the Temporal development service; the application
 still has no separate persistence system.
@@ -327,11 +343,9 @@ secret and a reusable Temporal client during a warm invocation; all durable
 accounts, campaigns, levels, scores, points, and leaderboard data remain in
 Temporal Cloud.
 
-Workflow links in the web app default to the local Temporal UI at
-`http://localhost:8233`. Set `TEMPORAL_WEB_UI_URL=https://cloud.temporal.io`
-when the API uses Temporal Cloud. The URL namespace defaults to
-`TEMPORAL_NAMESPACE`; set `TEMPORAL_WEB_UI_NAMESPACE` when the namespace
-segment used by Temporal Cloud differs.
+Workflow links in the web app open the read-only, application-aware explorer at
+`/workflows/`. This keeps private Player and Level executions behind the same
+Wordflow session boundary instead of linking visitors to Temporal Cloud.
 
 ## Identity model
 

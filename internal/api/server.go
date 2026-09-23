@@ -20,6 +20,7 @@ import (
 
 	"github.com/mjones/temporal-word-game/internal/bootstrap"
 	"github.com/mjones/temporal-word-game/internal/campaign"
+	"github.com/mjones/temporal-word-game/internal/explorer"
 	"github.com/mjones/temporal-word-game/internal/game"
 	"github.com/mjones/temporal-word-game/internal/workflows"
 
@@ -33,23 +34,19 @@ import (
 var webFiles embed.FS
 
 type Server struct {
-	temporal          client.Client
-	taskQueue         string
-	temporalUIURL     string
-	temporalNamespace string
-	sessionJWTSecret  []byte
+	temporal         client.Client
+	taskQueue        string
+	sessionJWTSecret []byte
 }
 
-func New(temporalClient client.Client, taskQueue, temporalUIURL, temporalNamespace, sessionJWTSecret string) http.Handler {
+func New(temporalClient client.Client, taskQueue, temporalNamespace, sessionJWTSecret string) http.Handler {
 	if len(sessionJWTSecret) < 32 {
 		panic("SESSION_JWT_SECRET must contain at least 32 characters")
 	}
 	server := &Server{
-		temporal:          temporalClient,
-		taskQueue:         taskQueue,
-		temporalUIURL:     temporalUIURL,
-		temporalNamespace: temporalNamespace,
-		sessionJWTSecret:  []byte(sessionJWTSecret),
+		temporal:         temporalClient,
+		taskQueue:        taskQueue,
+		sessionJWTSecret: []byte(sessionJWTSecret),
 	}
 	mux := http.NewServeMux()
 
@@ -68,6 +65,9 @@ func New(temporalClient client.Client, taskQueue, temporalUIURL, temporalNamespa
 	mux.HandleFunc("POST /api/me/campaigns/{campaign}/levels/{level}/guesses", server.submitGuess)
 	mux.HandleFunc("POST /api/me/campaigns/{campaign}/levels/{level}/hints", server.useHint)
 	mux.HandleFunc("GET /api/leaderboard", server.getLeaderboard)
+	mux.Handle("/workflows/", http.StripPrefix("/workflows", explorer.New(
+		temporalClient, temporalNamespace, server.authenticatedPlayerID,
+	)))
 
 	static, err := fs.Sub(webFiles, "web")
 	if err != nil {
@@ -111,7 +111,7 @@ func New(temporalClient client.Client, taskQueue, temporalUIURL, temporalNamespa
 		writer.Header().Set("Cache-Control", "public, max-age=3600")
 		staticHandler.ServeHTTP(writer, request)
 	}))
-	return mux
+	return compressResponses(mux)
 }
 
 func renderSocialURLs(page []byte, request *http.Request, canonicalPath string) []byte {
@@ -449,15 +449,25 @@ func (s *Server) sessionResponse(ctx context.Context, player game.PlayerView) (s
 func (s *Server) catalog(ctx context.Context, player game.PlayerView) (catalogResponse, error) {
 	var catalogView campaign.CatalogView
 	query := campaign.QueryInput{Player: campaignPlayerProgress(player)}
-	result, err := s.temporal.QueryWorkflow(ctx, workflows.CatalogWorkflowID, "", workflows.QueryCatalog, query)
-	if err == nil {
-		err = result.Get(&catalogView)
-	} else {
+	queryCatalog := func() (*client.QueryWorkflowWithOptionsResponse, error) {
+		return s.temporal.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+			WorkflowID:           workflows.CatalogWorkflowID,
+			QueryType:            workflows.QueryCatalog,
+			Args:                 []any{query},
+			QueryRejectCondition: enums.QUERY_REJECT_CONDITION_NOT_OPEN,
+		})
+	}
+
+	result, err := queryCatalog()
+	start := result == nil || result.QueryRejected != nil || result.QueryResult == nil
+	if err != nil {
 		var notFound *serviceerror.NotFound
 		if !errors.As(err, &notFound) {
 			return catalogResponse{}, err
 		}
-
+		start = true
+	}
+	if start {
 		defaultCampaign, startErr := bootstrap.StartDefaultCampaign(ctx, s.temporal, s.taskQueue)
 		if startErr != nil {
 			return catalogResponse{}, startErr
@@ -483,20 +493,23 @@ func (s *Server) catalog(ctx context.Context, player game.PlayerView) (catalogRe
 		}
 		var campaignCount int
 		if err = handle.Get(ctx, &campaignCount); err == nil {
-			result, err = s.temporal.QueryWorkflow(ctx, workflows.CatalogWorkflowID, "", workflows.QueryCatalog, query)
-			if err == nil {
-				err = result.Get(&catalogView)
-			}
+			result, err = queryCatalog()
 		}
 	}
 	if err != nil {
+		return catalogResponse{}, err
+	}
+	if result == nil || result.QueryRejected != nil || result.QueryResult == nil {
+		return catalogResponse{}, errors.New("catalog workflow is not open")
+	}
+	if err := result.QueryResult.Get(&catalogView); err != nil {
 		return catalogResponse{}, err
 	}
 
 	response := catalogResponse{Campaigns: make([]catalogCampaignResponse, 0, len(catalogView.Campaigns))}
 	for _, view := range catalogView.Campaigns {
 		response.Campaigns = append(response.Campaigns, newCatalogCampaignResponse(view,
-			workflowUIURL(s.temporalUIURL, s.temporalNamespace, view.WorkflowID, "")))
+			workflowExplorerURL(view.WorkflowID, "")))
 	}
 	return response, nil
 }
@@ -875,19 +888,15 @@ func (s *Server) update(ctx context.Context, workflowID, updateID, updateName st
 }
 
 func (s *Server) redirectWorkflowLink(writer http.ResponseWriter, request *http.Request, workflowID string) {
-	http.Redirect(writer, request, workflowUIURL(s.temporalUIURL, s.temporalNamespace, workflowID, ""), http.StatusFound)
+	http.Redirect(writer, request, workflowExplorerURL(workflowID, ""), http.StatusFound)
 }
 
-func workflowUIURL(baseURL, namespace, workflowID, runID string) string {
-	workflowURL := fmt.Sprintf("%s/namespaces/%s/workflows/%s",
-		strings.TrimRight(baseURL, "/"),
-		url.PathEscape(namespace),
-		url.PathEscape(workflowID),
-	)
-	if runID == "" {
-		return workflowURL
+func workflowExplorerURL(workflowID, runID string) string {
+	query := url.Values{"workflowId": []string{workflowID}}
+	if runID != "" {
+		query.Set("runId", runID)
 	}
-	return fmt.Sprintf("%s/%s/timeline", workflowURL, url.PathEscape(runID))
+	return "/workflows/?" + query.Encode()
 }
 
 func campaignPlayerProgress(player game.PlayerView) campaign.PlayerProgress {

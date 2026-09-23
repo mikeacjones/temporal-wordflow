@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -21,39 +22,29 @@ import (
 	"go.temporal.io/sdk/temporal"
 )
 
-func TestWorkflowUIURL(t *testing.T) {
+func TestWorkflowExplorerURL(t *testing.T) {
 	t.Parallel()
 
-	got := workflowUIURL(
-		"https://cloud.temporal.io/",
-		"wordflow.a1b2c",
-		"player/42/game/2",
-		"run-id",
-	)
-	want := "https://cloud.temporal.io/namespaces/wordflow.a1b2c/workflows/player%2F42%2Fgame%2F2/run-id/timeline"
+	got := workflowExplorerURL("player/42/game/2", "run-id")
+	want := "/workflows/?runId=run-id&workflowId=player%2F42%2Fgame%2F2"
 	if got != want {
-		t.Fatalf("workflowUIURL() = %q, want %q", got, want)
+		t.Fatalf("workflowExplorerURL() = %q, want %q", got, want)
 	}
 }
 
-func TestWorkflowUIURLWithoutRunID(t *testing.T) {
+func TestWorkflowExplorerURLWithoutRunID(t *testing.T) {
 	t.Parallel()
 
-	got := workflowUIURL(
-		"https://cloud.temporal.io/",
-		"wordflow.a1b2c",
-		"wordflow-campaign/temporal-foundations",
-		"",
-	)
-	want := "https://cloud.temporal.io/namespaces/wordflow.a1b2c/workflows/wordflow-campaign%2Ftemporal-foundations"
+	got := workflowExplorerURL("wordflow-campaign/temporal-foundations", "")
+	want := "/workflows/?workflowId=wordflow-campaign%2Ftemporal-foundations"
 	if got != want {
-		t.Fatalf("workflowUIURL() = %q, want %q", got, want)
+		t.Fatalf("workflowExplorerURL() = %q, want %q", got, want)
 	}
 }
 
 func TestIndexWithoutSessionRendersLoginImmediately(t *testing.T) {
 	temporalClient := temporalmocks.NewClient(t)
-	handler := New(temporalClient, "test-task-queue", "http://localhost:8233", "default",
+	handler := New(temporalClient, "test-task-queue", "default",
 		"a-test-session-secret-with-at-least-32-characters")
 	request := httptest.NewRequest("GET", "/", nil)
 	request.Header.Set("X-Forwarded-Proto", "https")
@@ -74,7 +65,7 @@ func TestIndexWithoutSessionRendersLoginImmediately(t *testing.T) {
 
 func TestSocialPreviewImageIsPublic(t *testing.T) {
 	temporalClient := temporalmocks.NewClient(t)
-	handler := New(temporalClient, "test-task-queue", "http://localhost:8233", "default",
+	handler := New(temporalClient, "test-task-queue", "default",
 		"a-test-session-secret-with-at-least-32-characters")
 	request := httptest.NewRequest("GET", "/social-preview.png", nil)
 	response := httptest.NewRecorder()
@@ -87,13 +78,29 @@ func TestSocialPreviewImageIsPublic(t *testing.T) {
 	require.Greater(t, response.Body.Len(), 1000)
 }
 
+func TestWorkflowExplorerIsMountedInWebApp(t *testing.T) {
+	temporalClient := temporalmocks.NewClient(t)
+	handler := New(temporalClient, "test-task-queue", "default",
+		"a-test-session-secret-with-at-least-32-characters")
+	request := httptest.NewRequest("GET", "/workflows/", nil)
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Contains(t, response.Body.String(), "Workflow Explorer")
+	require.NotContains(t, response.Body.String(), "Explore campaigns, timers")
+	require.NotContains(t, response.Body.String(), "Sanitized at the API boundary")
+	require.Contains(t, response.Body.String(), `id="show-worker-events" type="checkbox" checked`)
+}
+
 func TestWorkflowLinkRedirectDoesNotDescribeWorkflow(t *testing.T) {
 	secret := []byte("a-test-session-secret-with-at-least-32-characters")
 	now := time.Now()
 	token, err := newSessionToken(secret, "alice", now, now.Add(time.Hour))
 	require.NoError(t, err)
 	temporalClient := temporalmocks.NewClient(t)
-	handler := New(temporalClient, "test-task-queue", "https://temporal.example.test", "wordflow.test", string(secret))
+	handler := New(temporalClient, "test-task-queue", "wordflow.test", string(secret))
 	request := httptest.NewRequest("GET", "/api/me/workflow-link", nil)
 	request.Header.Set("Cookie", sessionCookieName+"="+token)
 	response := httptest.NewRecorder()
@@ -101,9 +108,7 @@ func TestWorkflowLinkRedirectDoesNotDescribeWorkflow(t *testing.T) {
 	handler.ServeHTTP(response, request)
 
 	require.Equal(t, 302, response.Code)
-	require.Equal(t,
-		"https://temporal.example.test/namespaces/wordflow.test/workflows/player%2Falice",
-		response.Header().Get("Location"))
+	require.Equal(t, "/workflows/?workflowId=player%2Falice", response.Header().Get("Location"))
 }
 
 func TestIndexWithExpiredSessionRendersLoginImmediately(t *testing.T) {
@@ -112,7 +117,7 @@ func TestIndexWithExpiredSessionRendersLoginImmediately(t *testing.T) {
 	token, err := newSessionToken(secret, "alice", now.Add(-2*time.Hour), now.Add(-time.Hour))
 	require.NoError(t, err)
 	temporalClient := temporalmocks.NewClient(t)
-	handler := New(temporalClient, "test-task-queue", "http://localhost:8233", "default", string(secret))
+	handler := New(temporalClient, "test-task-queue", "default", string(secret))
 	request := httptest.NewRequest("GET", "/", nil)
 	request.Header.Set("Cookie", sessionCookieName+"="+token)
 	response := httptest.NewRecorder()
@@ -129,7 +134,7 @@ func TestIndexWithValidSessionStartsOnNeutralLoadingScreen(t *testing.T) {
 	token, err := newSessionToken(secret, "alice", now, now.Add(time.Hour))
 	require.NoError(t, err)
 	temporalClient := temporalmocks.NewClient(t)
-	handler := New(temporalClient, "test-task-queue", "http://localhost:8233", "default", string(secret))
+	handler := New(temporalClient, "test-task-queue", "default", string(secret))
 	request := httptest.NewRequest("GET", "/", nil)
 	request.Header.Set("Cookie", sessionCookieName+"="+token)
 	response := httptest.NewRecorder()
@@ -262,18 +267,66 @@ func TestCatalogReadsExistingWorkflowWithQuery(t *testing.T) {
 	}).Return(nil).Once()
 
 	temporalClient := temporalmocks.NewClient(t)
-	temporalClient.On("QueryWorkflow", mock.Anything, workflows.CatalogWorkflowID, "", workflows.QueryCatalog,
-		mock.MatchedBy(func(input campaign.QueryInput) bool { return len(input.Player.Campaigns) == 0 })).
-		Return(result, nil).Once()
-	server := &Server{
-		temporal: temporalClient, temporalUIURL: "https://cloud.temporal.io", temporalNamespace: "wordflow.test",
-	}
+	temporalClient.On("QueryWorkflowWithOptions", mock.Anything,
+		mock.MatchedBy(func(request *client.QueryWorkflowWithOptionsRequest) bool {
+			return request.WorkflowID == workflows.CatalogWorkflowID &&
+				request.QueryType == workflows.QueryCatalog &&
+				request.QueryRejectCondition == enums.QUERY_REJECT_CONDITION_NOT_OPEN &&
+				len(request.Args) == 1
+		})).Return(&client.QueryWorkflowWithOptionsResponse{QueryResult: result}, nil).Once()
+	server := &Server{temporal: temporalClient}
 
 	response, err := server.catalog(context.Background(), game.PlayerView{})
 	require.NoError(t, err)
 	require.Len(t, response.Campaigns, 1)
 	require.Equal(t, "Campaign", response.Campaigns[0].Title)
-	require.Contains(t, response.Campaigns[0].WorkflowURL, "wordflow-campaign%2Fcampaign")
+	require.Equal(t, "/workflows/?workflowId=wordflow-campaign%2Fcampaign", response.Campaigns[0].WorkflowURL)
+}
+
+func TestCatalogStartsFreshAfterPreviousWorkflowWasTerminated(t *testing.T) {
+	result := temporalmocks.NewEncodedValue(t)
+	result.On("Get", mock.Anything).Run(func(arguments mock.Arguments) {
+		view := arguments.Get(0).(*campaign.CatalogView)
+		*view = campaign.CatalogView{Campaigns: []campaign.View{}}
+	}).Return(nil).Once()
+
+	queryRequest := mock.MatchedBy(func(request *client.QueryWorkflowWithOptionsRequest) bool {
+		return request.WorkflowID == workflows.CatalogWorkflowID &&
+			request.QueryType == workflows.QueryCatalog &&
+			request.QueryRejectCondition == enums.QUERY_REJECT_CONDITION_NOT_OPEN
+	})
+	handle := temporalmocks.NewWorkflowUpdateHandle(t)
+	handle.On("Get", mock.Anything, mock.Anything).Run(func(arguments mock.Arguments) {
+		*arguments.Get(1).(*int) = 1
+	}).Return(nil).Once()
+	temporalClient := temporalmocks.NewClient(t)
+	temporalClient.On("QueryWorkflowWithOptions", mock.Anything, queryRequest).
+		Return(&client.QueryWorkflowWithOptionsResponse{
+			QueryRejected: &querypb.QueryRejected{Status: enums.WORKFLOW_EXECUTION_STATUS_TERMINATED},
+		}, nil).Once()
+	temporalClient.On("ExecuteWorkflow", mock.Anything, mock.MatchedBy(func(options client.StartWorkflowOptions) bool {
+		return options.ID == workflows.WordflowCampaignWorkflowID("temporal-foundations") &&
+			options.TaskQueue == "wordflow" &&
+			options.WorkflowIDReusePolicy == enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
+	}), workflows.WordflowCampaignWorkflowName, mock.Anything).
+		Return((client.WorkflowRun)(nil), nil).Once()
+	temporalClient.On("NewWithStartWorkflowOperation", mock.MatchedBy(func(options client.StartWorkflowOptions) bool {
+		return options.ID == workflows.CatalogWorkflowID && options.TaskQueue == "wordflow" &&
+			options.WorkflowIDReusePolicy == enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
+	}), workflows.CatalogWorkflowName, mock.Anything).
+		Return((client.WithStartWorkflowOperation)(nil)).Once()
+	temporalClient.On("UpdateWithStartWorkflow", mock.Anything,
+		mock.MatchedBy(func(options client.UpdateWithStartWorkflowOptions) bool {
+			return options.UpdateOptions.UpdateName == workflows.UpdateOpenCatalog
+		})).Return(handle, nil).Once()
+	temporalClient.On("QueryWorkflowWithOptions", mock.Anything, queryRequest).
+		Return(&client.QueryWorkflowWithOptionsResponse{QueryResult: result}, nil).Once()
+	server := &Server{temporal: temporalClient, taskQueue: "wordflow"}
+
+	response, err := server.catalog(context.Background(), game.PlayerView{})
+
+	require.NoError(t, err)
+	require.Empty(t, response.Campaigns)
 }
 
 func TestStartGameUsesThePlayerUpdateResultWithoutQueryingTheChild(t *testing.T) {

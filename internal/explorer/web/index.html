@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#101010">
+  <title>Wordflow Workflow Explorer</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Workflow Explorer home">
+      <span class="brand-mark" aria-hidden="true"><span></span></span>
+      <span>
+        <strong>Workflow Explorer</strong>
+        <small>Wordflow · read-only Temporal view</small>
+      </span>
+    </a>
+    <div id="viewer-badge" class="viewer-badge skeleton-text">Checking access…</div>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div>
+        <p class="eyebrow">DURABLE EXECUTION, WITHOUT THE SECRETS</p>
+        <h1>See the machinery<br>behind the game.</h1>
+      </div>
+    </section>
+
+    <div class="workspace">
+      <aside class="workflow-browser" aria-label="Workflow executions">
+        <div class="browser-heading">
+          <div>
+            <p class="eyebrow">EXECUTIONS</p>
+            <h2>Workflows</h2>
+          </div>
+          <button id="refresh-list" class="icon-button" type="button" aria-label="Refresh workflows" title="Refresh workflows">↻</button>
+        </div>
+        <label class="search">
+          <span class="sr-only">Filter workflows</span>
+          <input id="workflow-search" type="search" placeholder="Filter by ID or type" autocomplete="off">
+        </label>
+        <div class="legend">
+          <span><i class="public-dot"></i>Public</span>
+          <span><i class="private-dot"></i>Your workflows</span>
+        </div>
+        <div id="workflow-list" class="workflow-list" aria-live="polite">
+          <div class="loading-card"><span></span><span></span><span></span></div>
+          <div class="loading-card"><span></span><span></span><span></span></div>
+          <div class="loading-card"><span></span><span></span><span></span></div>
+        </div>
+        <button id="load-more-workflows" class="secondary-button hidden" type="button">Load more executions</button>
+      </aside>
+
+      <section id="detail-panel" class="detail-panel" aria-live="polite">
+        <div id="empty-detail" class="empty-detail">
+          <div class="empty-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
+          <p class="eyebrow">SELECT AN EXECUTION</p>
+          <h2>Every durable action leaves a trail.</h2>
+          <p>Choose a Workflow to inspect its safe, payload-free timeline.</p>
+        </div>
+
+        <div id="workflow-detail" class="hidden">
+          <div class="detail-heading">
+            <div>
+              <div class="detail-labels">
+                <span id="detail-kind" class="kind-pill"></span>
+                <span id="detail-status" class="status-pill"></span>
+              </div>
+              <h2 id="detail-id"></h2>
+              <p id="detail-type" class="detail-type"></p>
+            </div>
+            <button id="refresh-detail" class="icon-button" type="button" aria-label="Refresh timeline" title="Refresh timeline">↻</button>
+          </div>
+
+          <dl class="metric-grid">
+            <div><dt>Started</dt><dd id="metric-started">—</dd></div>
+            <div><dt>History events</dt><dd id="metric-history">—</dd></div>
+            <div><dt>State transitions</dt><dd id="metric-transitions">—</dd></div>
+            <div><dt>History size</dt><dd id="metric-size">—</dd></div>
+          </dl>
+
+          <div id="version-strip" class="version-strip hidden">
+            <span><small>Versioning</small><strong id="version-behavior"></strong></span>
+            <span><small>Deployment</small><strong id="version-deployment"></strong></span>
+            <span><small>Build</small><strong id="version-build"></strong></span>
+          </div>
+
+          <div id="pending-strip" class="pending-strip hidden"></div>
+
+          <div class="timeline-heading">
+            <div>
+              <p class="eyebrow">EVENT HISTORY</p>
+              <h3>Sanitized timeline</h3>
+            </div>
+            <div class="timeline-controls">
+              <span class="live-indicator"><i></i>Live · 5s</span>
+              <label class="toggle">
+                <input id="show-worker-events" type="checkbox" checked>
+                <span aria-hidden="true"></span>
+                Show Workflow Tasks
+              </label>
+            </div>
+          </div>
+          <ol id="timeline" class="timeline"></ol>
+          <button id="load-more-events" class="secondary-button hidden" type="button">Load more history</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <span>Wordflow Workflow Explorer</span>
+    <span>Read-only by construction · no Workflow code executes</span>
+  </footer>
+</body>
+</html>
