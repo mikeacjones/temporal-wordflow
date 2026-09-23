@@ -102,13 +102,41 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 		state.Registered = true
 	}
 
+	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
+	var deadline workflow.Future
+	expired := false
 	if state.Definition.EndsAt != nil {
 		remaining := state.Definition.EndsAt.Sub(workflow.Now(ctx))
 		if remaining > 0 {
-			if err := workflow.Sleep(ctx, remaining); err != nil {
-				return err
-			}
+			deadline = workflow.NewTimer(ctx, remaining)
+		} else {
+			expired = true
 		}
+	}
+
+	for !expired {
+		selector := workflow.NewSelector(ctx)
+		if deadline != nil {
+			selector.AddFuture(deadline, func(workflow.Future) {
+				expired = true
+				deadline = nil
+			})
+		}
+		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
+			var ignored struct{}
+			channel.Receive(ctx, &ignored)
+		})
+		selector.Select(ctx)
+		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
+			workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
+			state.Registered = false
+			return workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{
+				InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
+			}, WordflowCampaignWorkflowName, WordflowCampaignWorkflowInput{State: state})
+		}
+	}
+
+	if state.Definition.EndsAt != nil {
 		activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 30 * time.Second})
 		if err := workflow.ExecuteActivity(activityCtx, ActivityUnregisterCampaign, UnregisterCampaignActivityInput{
 			CampaignID: state.Definition.ID,
@@ -119,7 +147,7 @@ func WordflowCampaignWorkflow(ctx workflow.Context, input WordflowCampaignWorkfl
 		}
 		return nil
 	}
-	return workflow.Await(ctx, func() bool { return false })
+	return nil
 }
 
 func validateWordflowCampaignLevels(levels []game.Puzzle) error {

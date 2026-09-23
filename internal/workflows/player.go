@@ -82,6 +82,7 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 	state := initialPlayerState(ctx, input)
 	lock := workflow.NewMutex(ctx)
 	changed := workflow.NewBufferedChannel(ctx, 1)
+	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
 	var levelFuture workflow.ChildWorkflowFuture
 	var leaderboardFuture workflow.Future
 
@@ -258,6 +259,10 @@ func PlayerWorkflow(ctx workflow.Context, input PlayerWorkflowInput) error {
 		}
 		selector.AddReceive(changed, func(channel workflow.ReceiveChannel, _ bool) {
 			var ignored bool
+			channel.Receive(ctx, &ignored)
+		})
+		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
+			var ignored struct{}
 			channel.Receive(ctx, &ignored)
 		})
 		selector.Select(ctx)

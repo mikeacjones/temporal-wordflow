@@ -45,6 +45,7 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 		}
 	}
 	changed := workflow.NewBufferedChannel(ctx, 1)
+	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
 
 	if err := workflow.SetQueryHandler(ctx, QueryCatalog, func(input campaign.QueryInput) (campaign.CatalogView, error) {
 		// Query results are not recorded in Workflow history. Wall time keeps
@@ -118,8 +119,16 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 	}
 
 	for {
-		var ignored bool
-		changed.Receive(ctx, &ignored)
+		selector := workflow.NewSelector(ctx)
+		selector.AddReceive(changed, func(channel workflow.ReceiveChannel, _ bool) {
+			var ignored bool
+			channel.Receive(ctx, &ignored)
+		})
+		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
+			var ignored struct{}
+			channel.Receive(ctx, &ignored)
+		})
+		selector.Select(ctx)
 		if !workflow.GetInfo(ctx).GetContinueAsNewSuggested() &&
 			!workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
 			continue
@@ -127,6 +136,15 @@ func CatalogWorkflow(ctx workflow.Context, input CatalogWorkflowInput) error {
 		if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 			return err
 		}
+		registrations := state.Campaigns[:0]
+		for _, registration := range state.Campaigns {
+			// Reference-only registrations from the previous Catalog schema are
+			// replaced when their Campaign Workflows upgrade and publish snapshots.
+			if registration.Definition.ID != "" {
+				registrations = append(registrations, registration)
+			}
+		}
+		state.Campaigns = registrations
 		return workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{
 			InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
 		}, CatalogWorkflowName, CatalogWorkflowInput{State: state})

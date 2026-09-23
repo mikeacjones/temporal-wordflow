@@ -38,12 +38,28 @@ func LeaderboardWorkflow(ctx workflow.Context, input LeaderboardWorkflowInput) e
 	}
 
 	scores := workflow.GetSignalChannel(ctx, SignalLeaderboardScore)
+	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
 	for {
-		var entry game.LeaderboardEntry
-		scores.Receive(ctx, &entry)
-		upsertLeaderboardEntry(state, entry)
+		selector := workflow.NewSelector(ctx)
+		selector.AddReceive(scores, func(channel workflow.ReceiveChannel, _ bool) {
+			var entry game.LeaderboardEntry
+			channel.Receive(ctx, &entry)
+			upsertLeaderboardEntry(state, entry)
+		})
+		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
+			var ignored struct{}
+			channel.Receive(ctx, &ignored)
+		})
+		selector.Select(ctx)
 		if workflow.GetInfo(ctx).GetContinueAsNewSuggested() ||
 			workflow.GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged() {
+			for {
+				var entry game.LeaderboardEntry
+				if !scores.ReceiveAsync(&entry) {
+					break
+				}
+				upsertLeaderboardEntry(state, entry)
+			}
 			return workflow.NewContinueAsNewErrorWithOptions(ctx, workflow.ContinueAsNewErrorOptions{
 				InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
 			}, LeaderboardWorkflowName, LeaderboardWorkflowInput{State: state})

@@ -59,6 +59,7 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 	// Paid hints await an Activity, so every level mutation shares this lock.
 	lock := workflow.NewMutex(ctx)
 	changed := workflow.NewBufferedChannel(ctx, 1)
+	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
 
 	if err := workflow.SetQueryHandler(ctx, QueryWordflowLevelState, func() (game.GameView, error) {
 		return wordflowLevelView(state), nil
@@ -191,6 +192,10 @@ func WordflowLevelWorkflow(ctx workflow.Context, input WordflowLevelWorkflowInpu
 		selector := workflow.NewSelector(ctx)
 		selector.AddReceive(changed, func(channel workflow.ReceiveChannel, _ bool) {
 			var ignored bool
+			channel.Receive(ctx, &ignored)
+		})
+		selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
+			var ignored struct{}
 			channel.Receive(ctx, &ignored)
 		})
 		if deadline != nil {

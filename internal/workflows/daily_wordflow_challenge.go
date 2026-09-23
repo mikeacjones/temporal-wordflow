@@ -54,6 +54,7 @@ func DailyWordflowChallengeWorkflow(ctx workflow.Context, input DailyWordflowCha
 	}); err != nil {
 		return err
 	}
+	upgrade := workflow.GetSignalChannel(ctx, SignalRequestVersionUpgrade)
 
 	activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout:    90 * time.Second,
@@ -74,11 +75,19 @@ func DailyWordflowChallengeWorkflow(ctx workflow.Context, input DailyWordflowCha
 		state.NextDate = date
 
 		if wait := startsAt.Sub(workflow.Now(ctx)); wait > 0 {
-			if err := workflow.Sleep(ctx, wait); err != nil {
-				return err
-			}
-			if shouldContinueDailyWordflowChallenge(ctx) {
-				return continueDailyWordflowChallengeAsNew(ctx, state)
+			ready := false
+			deadline := workflow.NewTimer(ctx, wait)
+			for !ready {
+				selector := workflow.NewSelector(ctx)
+				selector.AddFuture(deadline, func(workflow.Future) { ready = true })
+				selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
+					var ignored struct{}
+					channel.Receive(ctx, &ignored)
+				})
+				selector.Select(ctx)
+				if shouldContinueDailyWordflowChallenge(ctx) {
+					return continueDailyWordflowChallengeAsNew(ctx, state)
+				}
 			}
 		}
 
@@ -111,17 +120,28 @@ func DailyWordflowChallengeWorkflow(ctx workflow.Context, input DailyWordflowCha
 
 		archiveDailyChallenge(state, date, campaignInput)
 		state.NextDate = endsAt.In(torontoLocation).Format(dailyChallengeDateLayout)
+		var ignored struct{}
+		for upgrade.ReceiveAsync(&ignored) {
+		}
 		if shouldContinueDailyWordflowChallenge(ctx) {
 			return continueDailyWordflowChallengeAsNew(ctx, state)
 		}
 
 		if wait := endsAt.Sub(workflow.Now(ctx)); wait > 0 {
-			if err := workflow.Sleep(ctx, wait); err != nil {
-				return err
+			ready := false
+			deadline := workflow.NewTimer(ctx, wait)
+			for !ready {
+				selector := workflow.NewSelector(ctx)
+				selector.AddFuture(deadline, func(workflow.Future) { ready = true })
+				selector.AddReceive(upgrade, func(channel workflow.ReceiveChannel, _ bool) {
+					var ignored struct{}
+					channel.Receive(ctx, &ignored)
+				})
+				selector.Select(ctx)
+				if shouldContinueDailyWordflowChallenge(ctx) {
+					return continueDailyWordflowChallengeAsNew(ctx, state)
+				}
 			}
-		}
-		if shouldContinueDailyWordflowChallenge(ctx) {
-			return continueDailyWordflowChallengeAsNew(ctx, state)
 		}
 	}
 }
