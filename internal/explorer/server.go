@@ -175,7 +175,7 @@ func (s *Server) listWorkflows(writer http.ResponseWriter, request *http.Request
 	workflows := make([]workflowSummary, 0, len(response.GetExecutions()))
 	for _, execution := range response.GetExecutions() {
 		workflowID := execution.GetExecution().GetWorkflowId()
-		if !canViewWorkflow(currentViewer.PlayerID, workflowID) {
+		if !canViewWorkflow(currentViewer.PlayerID, workflowID, execution.GetStatus()) {
 			continue
 		}
 		workflows = append(workflows, summarizeWorkflow(execution, workflowID))
@@ -189,7 +189,7 @@ func (s *Server) getWorkflow(writer http.ResponseWriter, request *http.Request) 
 	workflowID := request.URL.Query().Get("workflowId")
 	runID := request.URL.Query().Get("runId")
 	currentViewer := s.viewer(request)
-	if !canViewWorkflow(currentViewer.PlayerID, workflowID) {
+	if !canViewWorkflowID(currentViewer.PlayerID, workflowID) {
 		writeError(writer, http.StatusForbidden, errors.New("workflow is not available to this viewer"))
 		return
 	}
@@ -209,7 +209,7 @@ func (s *Server) getWorkflow(writer http.ResponseWriter, request *http.Request) 
 		return
 	}
 	info := description.GetWorkflowExecutionInfo()
-	if info == nil || !canViewWorkflow(currentViewer.PlayerID, info.GetExecution().GetWorkflowId()) {
+	if info == nil || !canViewWorkflow(currentViewer.PlayerID, info.GetExecution().GetWorkflowId(), info.GetStatus()) {
 		writeError(writer, http.StatusForbidden, errors.New("workflow is not available to this viewer"))
 		return
 	}
@@ -250,26 +250,46 @@ func (s *Server) viewer(request *http.Request) viewer {
 }
 
 func listFilter(playerID string) string {
-	parts := []string{
+	public := []string{
 		fmt.Sprintf("WorkflowId = '%s'", workflows.CatalogWorkflowID),
 		fmt.Sprintf("WorkflowId = '%s'", workflows.DailyWordflowChallengeWorkflowID),
 		fmt.Sprintf("WorkflowId = '%s'", workflows.LeaderboardWorkflowID),
 		"WorkflowId STARTS_WITH 'wordflow-campaign/'",
 	}
-	if playerID != "" {
-		parts = append(parts,
-			fmt.Sprintf("WorkflowId = '%s'", workflows.PlayerWorkflowID(playerID)),
-			fmt.Sprintf("WorkflowId STARTS_WITH 'wordflow-level/%s/'", playerID),
-		)
+	publicFilter := "(" + strings.Join(public, " OR ") + ")"
+	if playerID == "" {
+		return "ExecutionStatus != 'Terminated' AND ExecutionStatus != 'Completed' AND " + publicFilter
 	}
-	return "(" + strings.Join(parts, " OR ") + ")"
+
+	owned := []string{
+		fmt.Sprintf("WorkflowId = '%s'", workflows.PlayerWorkflowID(playerID)),
+		fmt.Sprintf("WorkflowId STARTS_WITH 'wordflow-level/%s/'", playerID),
+	}
+	ownedFilter := "(" + strings.Join(owned, " OR ") + ")"
+	return "ExecutionStatus != 'Terminated' AND ((ExecutionStatus != 'Completed' AND " +
+		publicFilter + ") OR " + ownedFilter + ")"
 }
 
-func canViewWorkflow(playerID, workflowID string) bool {
+func canViewWorkflowID(playerID, workflowID string) bool {
 	if workflowID == workflows.CatalogWorkflowID || workflowID == workflows.DailyWordflowChallengeWorkflowID ||
 		workflowID == workflows.LeaderboardWorkflowID || strings.HasPrefix(workflowID, "wordflow-campaign/") {
 		return true
 	}
+	return playerOwnsWorkflow(playerID, workflowID)
+}
+
+func canViewWorkflow(playerID, workflowID string, status enums.WorkflowExecutionStatus) bool {
+	if status == enums.WORKFLOW_EXECUTION_STATUS_TERMINATED {
+		return false
+	}
+	owned := playerOwnsWorkflow(playerID, workflowID)
+	if status == enums.WORKFLOW_EXECUTION_STATUS_COMPLETED {
+		return owned
+	}
+	return owned || canViewWorkflowID("", workflowID)
+}
+
+func playerOwnsWorkflow(playerID, workflowID string) bool {
 	if playerID == "" {
 		return false
 	}

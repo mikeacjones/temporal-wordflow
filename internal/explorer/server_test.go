@@ -48,8 +48,15 @@ func (f *fakeReader) GetWorkflowHistory(_ context.Context, request *workflowserv
 }
 
 func TestAnonymousListContainsOnlyPublicWorkflows(t *testing.T) {
+	runningCampaign := executionInfo(workflows.WordflowCampaignWorkflowID("today"), workflows.WordflowCampaignWorkflowName)
+	completedCampaign := executionInfo(workflows.WordflowCampaignWorkflowID("yesterday"), workflows.WordflowCampaignWorkflowName)
+	completedCampaign.Status = enums.WORKFLOW_EXECUTION_STATUS_COMPLETED
+	terminatedCampaign := executionInfo(workflows.WordflowCampaignWorkflowID("old"), workflows.WordflowCampaignWorkflowName)
+	terminatedCampaign.Status = enums.WORKFLOW_EXECUTION_STATUS_TERMINATED
 	reader := &fakeReader{listResponse: &workflowservicepb.ListWorkflowExecutionsResponse{Executions: []*workflowpb.WorkflowExecutionInfo{
-		executionInfo(workflows.WordflowCampaignWorkflowID("today"), workflows.WordflowCampaignWorkflowName),
+		runningCampaign,
+		completedCampaign,
+		terminatedCampaign,
 		executionInfo(workflows.PlayerWorkflowID("bob"), workflows.PlayerWorkflowName),
 	}}}
 	handler := newHandler(reader, func(*http.Request) (string, error) {
@@ -61,14 +68,27 @@ func TestAnonymousListContainsOnlyPublicWorkflows(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.Code)
 	require.Contains(t, reader.listRequest.GetQuery(), "wordflow-campaign/")
 	require.NotContains(t, reader.listRequest.GetQuery(), "player/")
+	require.Contains(t, reader.listRequest.GetQuery(), "ExecutionStatus != 'Terminated'")
+	require.Contains(t, reader.listRequest.GetQuery(), "ExecutionStatus != 'Completed'")
 	require.Contains(t, response.Body.String(), "wordflow-campaign/today")
+	require.NotContains(t, response.Body.String(), "wordflow-campaign/yesterday")
+	require.NotContains(t, response.Body.String(), "wordflow-campaign/old")
 	require.NotContains(t, response.Body.String(), "player/bob")
 }
 
 func TestAuthenticatedListIsLimitedToThatPlayer(t *testing.T) {
+	completedLevel := executionInfo(workflows.WordflowLevelWorkflowID("alice", "campaign", 1), workflows.WordflowLevelWorkflowName)
+	completedLevel.Status = enums.WORKFLOW_EXECUTION_STATUS_COMPLETED
+	terminatedLevel := executionInfo(workflows.WordflowLevelWorkflowID("alice", "campaign", 2), workflows.WordflowLevelWorkflowName)
+	terminatedLevel.Status = enums.WORKFLOW_EXECUTION_STATUS_TERMINATED
+	completedCampaign := executionInfo(workflows.WordflowCampaignWorkflowID("yesterday"), workflows.WordflowCampaignWorkflowName)
+	completedCampaign.Status = enums.WORKFLOW_EXECUTION_STATUS_COMPLETED
 	reader := &fakeReader{listResponse: &workflowservicepb.ListWorkflowExecutionsResponse{Executions: []*workflowpb.WorkflowExecutionInfo{
 		executionInfo(workflows.PlayerWorkflowID("alice"), workflows.PlayerWorkflowName),
-		executionInfo(workflows.WordflowLevelWorkflowID("alice", "campaign", 1), workflows.WordflowLevelWorkflowName),
+		completedLevel,
+		terminatedLevel,
+		completedCampaign,
+		executionInfo(workflows.WordflowCampaignWorkflowID("today"), workflows.WordflowCampaignWorkflowName),
 		executionInfo(workflows.PlayerWorkflowID("bob"), workflows.PlayerWorkflowName),
 	}}}
 	handler := newHandler(reader, func(*http.Request) (string, error) { return "alice", nil })
@@ -78,9 +98,59 @@ func TestAuthenticatedListIsLimitedToThatPlayer(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.Code)
 	require.Contains(t, reader.listRequest.GetQuery(), "player/alice")
 	require.Contains(t, reader.listRequest.GetQuery(), "wordflow-level/alice/")
+	require.Contains(t, reader.listRequest.GetQuery(), "ExecutionStatus != 'Terminated'")
 	require.Contains(t, response.Body.String(), "player/alice")
 	require.Contains(t, response.Body.String(), "wordflow-level/alice/campaign/1")
+	require.NotContains(t, response.Body.String(), "wordflow-level/alice/campaign/2")
+	require.NotContains(t, response.Body.String(), "wordflow-campaign/yesterday")
+	require.Contains(t, response.Body.String(), "wordflow-campaign/today")
 	require.NotContains(t, response.Body.String(), "player/bob")
+}
+
+func TestTerminatedWorkflowDetailIsUnavailable(t *testing.T) {
+	info := executionInfo(workflows.WordflowLevelWorkflowID("alice", "campaign", 1), workflows.WordflowLevelWorkflowName)
+	info.Status = enums.WORKFLOW_EXECUTION_STATUS_TERMINATED
+	reader := &fakeReader{description: &workflowservicepb.DescribeWorkflowExecutionResponse{WorkflowExecutionInfo: info}}
+	handler := newHandler(reader, func(*http.Request) (string, error) { return "alice", nil })
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/api/workflow?workflowId="+url.QueryEscape(info.GetExecution().GetWorkflowId()), nil)
+
+	handler.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusForbidden, response.Code)
+	require.Nil(t, reader.historyRequest)
+}
+
+func TestCompletedPublicWorkflowDetailIsUnavailable(t *testing.T) {
+	info := executionInfo(workflows.WordflowCampaignWorkflowID("yesterday"), workflows.WordflowCampaignWorkflowName)
+	info.Status = enums.WORKFLOW_EXECUTION_STATUS_COMPLETED
+	reader := &fakeReader{description: &workflowservicepb.DescribeWorkflowExecutionResponse{WorkflowExecutionInfo: info}}
+	handler := newHandler(reader, func(*http.Request) (string, error) { return "alice", nil })
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/api/workflow?workflowId="+url.QueryEscape(info.GetExecution().GetWorkflowId()), nil)
+
+	handler.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusForbidden, response.Code)
+	require.Nil(t, reader.historyRequest)
+}
+
+func TestCompletedPlayerLevelDetailRemainsVisible(t *testing.T) {
+	info := executionInfo(workflows.WordflowLevelWorkflowID("alice", "campaign", 1), workflows.WordflowLevelWorkflowName)
+	info.Status = enums.WORKFLOW_EXECUTION_STATUS_COMPLETED
+	reader := &fakeReader{
+		description:     &workflowservicepb.DescribeWorkflowExecutionResponse{WorkflowExecutionInfo: info},
+		historyResponse: &workflowservicepb.GetWorkflowExecutionHistoryResponse{History: &historypb.History{}},
+	}
+	handler := newHandler(reader, func(*http.Request) (string, error) { return "alice", nil })
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest("GET", "/api/workflow?workflowId="+url.QueryEscape(info.GetExecution().GetWorkflowId()), nil)
+
+	handler.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	require.NotNil(t, reader.historyRequest)
+	require.Contains(t, response.Body.String(), `"status":"completed"`)
 }
 
 func TestAnotherPlayersWorkflowIsRejectedBeforeTemporalIsCalled(t *testing.T) {
@@ -211,9 +281,9 @@ func TestPublicEventDetailsRedactPlayerAndPuzzleData(t *testing.T) {
 }
 
 func TestPlayerIDPrefixDoesNotAuthorizeAnotherPlayer(t *testing.T) {
-	require.True(t, canViewWorkflow("alice", workflows.WordflowLevelWorkflowID("alice", "campaign", 1)))
-	require.False(t, canViewWorkflow("alice", workflows.WordflowLevelWorkflowID("alice2", "campaign", 1)))
-	require.False(t, canViewWorkflow("alice", workflows.PlayerWorkflowID("alice2")))
+	require.True(t, canViewWorkflow("alice", workflows.WordflowLevelWorkflowID("alice", "campaign", 1), enums.WORKFLOW_EXECUTION_STATUS_COMPLETED))
+	require.False(t, canViewWorkflow("alice", workflows.WordflowLevelWorkflowID("alice2", "campaign", 1), enums.WORKFLOW_EXECUTION_STATUS_RUNNING))
+	require.False(t, canViewWorkflow("alice", workflows.PlayerWorkflowID("alice2"), enums.WORKFLOW_EXECUTION_STATUS_RUNNING))
 }
 
 func executionInfo(workflowID, workflowType string) *workflowpb.WorkflowExecutionInfo {
